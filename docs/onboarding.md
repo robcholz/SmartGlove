@@ -1,6 +1,6 @@
 # Onboarding
 
-Run this project inside the devcontainer and mount the current directory into it.
+Run this project inside the **devcontainer** and mount the current directory into it.
 
 On the **host** machine, install:
 

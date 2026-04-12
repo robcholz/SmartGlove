@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+env:
+  BINARY_NAME: SmartGlove
+  TARGET: xtensa-esp32s3-none-elf
+
+jobs:
+  release:
+    name: Build And Publish Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate semantic version tag
+        shell: bash
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag must match vX.Y.Z exactly, got: ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+
+      - name: Install Xtensa Rust toolchain
+        uses: esp-rs/xtensa-toolchain@v1.5
+        with:
+          default: true
+          buildtargets: esp32s3
+
+      - name: Cache Cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release firmware
+        run: cargo build --release --target "${TARGET}"
+
+      - name: Rename release artifact
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/${TARGET}/release/${BINARY_NAME}" "dist/${BINARY_NAME}-${GITHUB_REF_NAME}-${TARGET}.elf"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-${{ github.ref_name }}-${{ env.TARGET }}
+          path: dist/${{ env.BINARY_NAME }}-${{ github.ref_name }}-${{ env.TARGET }}.elf
+          if-no-files-found: error
+
+      - name: Publish GitHub release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ env.BINARY_NAME }}-${{ github.ref_name }}-${{ env.TARGET }}.elf
+          generate_release_notes: true

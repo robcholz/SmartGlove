@@ -1,7 +1,9 @@
 {
   "name": "SmartGlove",
-  "image": "mcr.microsoft.com/devcontainers/rust:1-1-bookworm",
-  "postCreateCommand": "bash -lc 'cd ~ && cargo +stable install espup --locked && cargo +stable install espflash --locked && espup install && for rc in ~/.bashrc ~/.zshrc; do touch \"$rc\"; grep -qxF \"source \\\"$HOME/export-esp.sh\\\"\" \"$rc\" || echo \"source \\\"$HOME/export-esp.sh\\\"\" >> \"$rc\"; done'",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "postCreateCommand": "bash -lc 'cd ~ && cargo +stable install espup --locked && cargo +stable install espflash --locked && espup install && for rc in ~/.bashrc ~/.zshrc; do touch \"$rc\"; grep -qxF \"source \\\"$HOME/export-esp.sh\\\"\" \"$rc\" || echo \"source \\\"$HOME/export-esp.sh\\\"\" >> \"$rc\"; done && cd \"${containerWorkspaceFolder}\" && uv sync --group dev && uv run pre-commit install --install-hooks --hook-type pre-commit --hook-type commit-msg --hook-type pre-push'",
   "customizations": {
     "vscode": {
       "extensions": [

@@ -7,21 +7,89 @@ on:
   pull_request:
 
 jobs:
-  format:
-    name: Format
+  pre-commit:
+    name: Pre-commit
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
 
-      - name: Check formatting
-        run: cargo +stable fmt --all --check
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync dev dependencies
+        run: uv sync --group dev
+
+      - name: Run pre-commit hooks
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+
+  commit-format:
+    name: Commit Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync dev dependencies
+        run: uv sync --group dev
+
+      - name: Validate commit messages with pre-commit config
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            base_ref="origin/${GITHUB_BASE_REF}"
+            git fetch --no-tags origin "${GITHUB_BASE_REF}"
+          else
+            base_ref="${GITHUB_EVENT_BEFORE}"
+          fi
+
+          if [[ -z "${base_ref}" || "${base_ref}" == "0000000000000000000000000000000000000000" ]]; then
+            commits="$(git rev-list --max-count=1 HEAD)"
+          else
+            commits="$(git rev-list "${base_ref}..HEAD")"
+          fi
+
+          if [[ -z "${commits}" ]]; then
+            echo "No commits to validate."
+            exit 0
+          fi
+
+          while IFS= read -r commit; do
+            [[ -n "${commit}" ]] || continue
+            msg_file="$(mktemp)"
+            git log --format=%B -n 1 "${commit}" > "${msg_file}"
+            echo "Checking commit ${commit}"
+            uv run pre-commit run conventional-precommit-linter \
+              --hook-stage commit-msg \
+              --commit-msg-filename "${msg_file}"
+            rm -f "${msg_file}"
+          done <<< "${commits}"
 
   test:
     name: Test
@@ -75,4 +143,4 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run clippy on firmware
-        run: cargo clippy --target xtensa-esp32s3-none-elf --bin SmartGlove -- -D warnings
+        run: cargo clippy --target xtensa-esp32s3-none-elf --bin smart-glove -- -D warnings

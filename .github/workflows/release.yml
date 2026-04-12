@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  BINARY_NAME: SmartGlove
+  BINARY_NAME: smart-glove
   TARGET: xtensa-esp32s3-none-elf
 
 jobs:

@@ -3,6 +3,7 @@ linker = "./scripts/xtensa-esp32s3-elf-gcc"
 runner = "espflash flash --monitor --chip esp32s3"
 
 [env]
+ESP_LOG = "debug" # log level
 
 [build]
 rustflags = [

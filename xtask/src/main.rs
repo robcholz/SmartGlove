@@ -20,7 +20,7 @@ fn main() {
 fn run_dev() -> Result<(), String> {
     let host_target = host_target()?;
 
-    run("cargo", &["+stable", "fmt", "--all"])?;
+    run("cargo", &["fmt", "--all"])?;
     run(
         "cargo",
         &["+stable", "test", "--lib", "--target", &host_target],
@@ -33,7 +33,7 @@ fn run_dev() -> Result<(), String> {
             "--target",
             "xtensa-esp32s3-none-elf",
             "--bin",
-            "SmartGlove",
+            "smart-glove",
             "--",
             "-D",
             "warnings",
@@ -44,10 +44,10 @@ fn run_dev() -> Result<(), String> {
 }
 
 fn host_target() -> Result<String, String> {
-    let output = Command::new("rustc")
-        .args(["-vV"])
+    let output = Command::new("rustup")
+        .args(["run", "stable", "rustc", "-vV"])
         .output()
-        .map_err(|error| format!("failed to invoke rustc: {error}"))?;
+        .map_err(|error| format!("failed to invoke `rustup run stable rustc -vV`: {error}"))?;
 
     if !output.status.success() {
         return Err("failed to query rustc host target".to_owned());

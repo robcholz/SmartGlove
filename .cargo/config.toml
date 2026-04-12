@@ -1,18 +1,17 @@
 [alias]
-dev = "run --manifest-path xtask/Cargo.toml -- dev"
+dev = "run --target aarch64-unknown-linux-gnu --manifest-path xtask/Cargo.toml -- dev"
 
 [target.xtensa-esp32s3-none-elf]
 linker = "./scripts/xtensa-esp32s3-elf-gcc"
 runner = "espflash flash --monitor --chip esp32s3"
+rustflags = [
+  "-C", "link-arg=-nostartfiles",
+]
 
 [env]
 ESP_LOG = "debug" # log level
 
 [build]
-rustflags = [
-  "-C", "link-arg=-nostartfiles",
-]
-
 target = "xtensa-esp32s3-none-elf"
 
 [unstable]

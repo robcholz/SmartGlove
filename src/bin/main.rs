@@ -12,7 +12,7 @@ use esp_hal::{
     main,
     time::{Duration, Instant},
 };
-use log::info;
+use defmt::info;
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
@@ -30,7 +30,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 #[main]
 fn main() -> ! {
     // generator version: 1.2.0
-    esp_println::logger::init_logger_from_env();
+    defmt_rtt::init!();
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let _peripherals = esp_hal::init(config);

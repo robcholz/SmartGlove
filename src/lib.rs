@@ -1,7 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
 pub const fn firmware_name() -> &'static str {
-    "SmartGlove"
+    "smart-glove"
 }
 
 #[cfg(test)]
@@ -10,6 +10,6 @@ mod tests {
 
     #[test]
     fn firmware_name_is_stable() {
-        assert_eq!(firmware_name(), "SmartGlove");
+        assert_eq!(firmware_name(), "smart-glove");
     }
 }

@@ -3,7 +3,7 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
-  "postCreateCommand": "bash -lc 'cd ~ && cargo +stable install espup --locked && cargo +stable install espflash --locked && espup install && for rc in ~/.bashrc ~/.zshrc; do touch \"$rc\"; grep -qxF \"source \\\"$HOME/export-esp.sh\\\"\" \"$rc\" || echo \"source \\\"$HOME/export-esp.sh\\\"\" >> \"$rc\"; done && cd \"${containerWorkspaceFolder}\" && uv sync --group dev && uv run pre-commit install --install-hooks --hook-type pre-commit --hook-type commit-msg --hook-type pre-push'",
+  "postCreateCommand": "bash -lc 'cd ~ && rustup component add --toolchain stable-aarch64-unknown-linux-gnu rustfmt clippy && cargo +stable install espup --locked && cargo +stable install espflash --locked && espup install && for rc in ~/.bashrc ~/.zshrc; do touch \"$rc\"; grep -qxF \"source \\\"$HOME/export-esp.sh\\\"\" \"$rc\" || echo \"source \\\"$HOME/export-esp.sh\\\"\" >> \"$rc\"; done && cd \"${containerWorkspaceFolder}\" && uv sync --group dev && uv run pre-commit install --install-hooks --hook-type pre-commit --hook-type commit-msg --hook-type pre-push'",
   "customizations": {
     "vscode": {
       "extensions": [

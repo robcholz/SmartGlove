@@ -1,6 +1,10 @@
 #!/bin/sh
 set -eu
 
+if command -v xtensa-esp32s3-elf-gcc >/dev/null 2>&1; then
+  exec "$(command -v xtensa-esp32s3-elf-gcc)" "$@"
+fi
+
 tool_dir="$HOME/.rustup/toolchains/esp/xtensa-esp-elf"
 
 if [ ! -d "$tool_dir" ]; then

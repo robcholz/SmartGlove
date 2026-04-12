@@ -27,4 +27,4 @@ See [Onboarding](onboarding.md) for local environment setup, pinned toolchain de
 - HTTP
   - https://github.com/drogue-iot/reqwless.git
 - Websocket
-  - 
+  -

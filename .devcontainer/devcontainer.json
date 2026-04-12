@@ -1,0 +1,12 @@
+{
+  "name": "SmartGlove",
+  "image": "mcr.microsoft.com/devcontainers/rust:1-1-bookworm",
+  "postCreateCommand": "bash -lc 'cd ~ && cargo +stable install espup --locked && cargo +stable install espflash --locked && espup install && for rc in ~/.bashrc ~/.zshrc; do touch \"$rc\"; grep -qxF \"source \\\"$HOME/export-esp.sh\\\"\" \"$rc\" || echo \"source \\\"$HOME/export-esp.sh\\\"\" >> \"$rc\"; done'",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer"
+      ]
+    }
+  }
+}

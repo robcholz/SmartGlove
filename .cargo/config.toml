@@ -1,5 +1,5 @@
 [alias]
-dev = "run --manifest-path xtask/Cargo.toml --target aarch64-apple-darwin -- dev"
+dev = "run --manifest-path xtask/Cargo.toml -- dev"
 
 [target.xtensa-esp32s3-none-elf]
 linker = "./scripts/xtensa-esp32s3-elf-gcc"

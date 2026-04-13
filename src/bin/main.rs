@@ -7,7 +7,7 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-use defmt::info;
+use defmt::info; 
 use esp_hal::{
     clock::CpuClock,
     main,

@@ -21,7 +21,7 @@ repos:
 
       - id: cargo-dev
         name: cargo dev
-        entry: cargo dev
+        entry: bash -lc 'if [ -f "$HOME/export-esp.sh" ]; then . "$HOME/export-esp.sh"; fi; cargo dev'
         language: system
         pass_filenames: false
         stages: [pre-push]

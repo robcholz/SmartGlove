@@ -7,12 +7,12 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use defmt::info;
 use esp_hal::{
     clock::CpuClock,
     main,
     time::{Duration, Instant},
 };
-use defmt::info;
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {

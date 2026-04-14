@@ -82,15 +82,17 @@ jobs:
 
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             base_ref="origin/${GITHUB_BASE_REF}"
+            head_ref="${{ github.event.pull_request.head.sha }}"
             git fetch --no-tags origin "${GITHUB_BASE_REF}"
           else
             base_ref="${{ github.event.before }}"
+            head_ref="HEAD"
           fi
 
           if [[ -z "${base_ref}" || "${base_ref}" == "0000000000000000000000000000000000000000" ]]; then
-            commits="$(git rev-list --max-count=1 HEAD)"
+            commits="$(git rev-list --max-count=1 "${head_ref}")"
           else
-            commits="$(git rev-list "${base_ref}..HEAD")"
+            commits="$(git rev-list "${base_ref}..${head_ref}")"
           fi
 
           if [[ -z "${commits}" ]]; then

@@ -91,6 +91,9 @@ jobs:
 
           if [[ -z "${base_ref}" || "${base_ref}" == "0000000000000000000000000000000000000000" ]]; then
             commits="$(git rev-list --max-count=1 "${head_ref}")"
+          elif ! git cat-file -e "${base_ref}^{commit}" 2>/dev/null; then
+            echo "Base commit ${base_ref} is unavailable, likely due to a force-push."
+            commits="$(git rev-list --max-count=20 "${head_ref}")"
           else
             commits="$(git rev-list "${base_ref}..${head_ref}")"
           fi
@@ -102,6 +105,10 @@ jobs:
 
           while IFS= read -r commit; do
             [[ -n "${commit}" ]] || continue
+            if [[ "$(git rev-list --parents -n 1 "${commit}" | awk '{print NF-1}')" -gt 1 ]]; then
+              echo "Skipping merge commit ${commit}"
+              continue
+            fi
             msg_file="$(mktemp)"
             git log --format=%B -n 1 "${commit}" > "${msg_file}"
             echo "Checking commit ${commit}"

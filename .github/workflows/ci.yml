@@ -105,10 +105,25 @@ jobs:
 
           while IFS= read -r commit; do
             [[ -n "${commit}" ]] || continue
+            subject="$(git log --format=%s -n 1 "${commit}")"
+            committer_name="$(git log --format=%cn -n 1 "${commit}")"
+            committer_email="$(git log --format=%ce -n 1 "${commit}")"
+
             if [[ "$(git rev-list --parents -n 1 "${commit}" | awk '{print NF-1}')" -gt 1 ]]; then
               echo "Skipping merge commit ${commit}"
               continue
             fi
+
+            if [[ "${subject}" == Merge\ * || "${subject}" == Merged\ * ]]; then
+              echo "Skipping Git-generated merge subject on ${commit}"
+              continue
+            fi
+
+            if [[ "${committer_name}" == "GitHub" && "${committer_email}" == "noreply@github.com" ]]; then
+              echo "Skipping GitHub-generated commit ${commit}"
+              continue
+            fi
+
             msg_file="$(mktemp)"
             git log --format=%B -n 1 "${commit}" > "${msg_file}"
             echo "Checking commit ${commit}"

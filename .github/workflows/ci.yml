@@ -102,6 +102,10 @@ jobs:
 
           while IFS= read -r commit; do
             [[ -n "${commit}" ]] || continue
+            if [[ "$(git rev-list --parents -n 1 "${commit}" | awk '{print NF-1}')" -gt 1 ]]; then
+              echo "Skipping merge commit ${commit}"
+              continue
+            fi
             msg_file="$(mktemp)"
             git log --format=%B -n 1 "${commit}" > "${msg_file}"
             echo "Checking commit ${commit}"

@@ -91,6 +91,9 @@ jobs:
 
           if [[ -z "${base_ref}" || "${base_ref}" == "0000000000000000000000000000000000000000" ]]; then
             commits="$(git rev-list --max-count=1 "${head_ref}")"
+          elif ! git cat-file -e "${base_ref}^{commit}" 2>/dev/null; then
+            echo "Base commit ${base_ref} is unavailable, likely due to a force-push."
+            commits="$(git rev-list --max-count=20 "${head_ref}")"
           else
             commits="$(git rev-list "${base_ref}..${head_ref}")"
           fi

@@ -5,6 +5,7 @@ target/
 
 # python
 .venv/
+.uv-cache/
 
 # ide
 .vscode/

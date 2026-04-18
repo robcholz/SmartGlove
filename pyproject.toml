@@ -1,7 +1,7 @@
 [project]
 name = "smartglove"
 version = "0.1.0"
-description = "Add your description here"
+description = "SmartGlove for StarkHacks April 17-19 2026 at Purdue"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

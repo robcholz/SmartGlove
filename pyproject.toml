@@ -10,6 +10,7 @@ dependencies = [
 ]
 
 [project.scripts]
+network-e2e = "tests.network_e2e:main"
 provision-e2e = "tests.provision_e2e:main"
 provision-serial = "tests.serial_capture:main"
 provision-test = "tests.provision_test:main"

@@ -15,9 +15,15 @@ from tests.provision_test import run_test
 
 
 class ProcessCapture:
-    def __init__(self, command: list[str], log_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        command: list[str],
+        log_path: Path | None = None,
+        env: dict[str, str] | None = None,
+    ) -> None:
         self.command = command
         self.log_path = log_path
+        self.env = env
         self.process: subprocess.Popen[str] | None = None
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -34,6 +40,7 @@ class ProcessCapture:
                 stdin=subprocess.PIPE,
                 text=True,
                 bufsize=1,
+                env=self.env,
             )
         else:
             master_fd, slave_fd = os.openpty()
@@ -46,6 +53,7 @@ class ProcessCapture:
                     stderr=slave_fd,
                     text=False,
                     close_fds=True,
+                    env=self.env,
                 )
             finally:
                 os.close(slave_fd)
@@ -202,9 +210,9 @@ def cargo_profile_flag(build_mode: str) -> list[str]:
     return ["--release"] if build_mode == "release" else []
 
 
-def run_command(command: list[str]) -> None:
+def run_command(command: list[str], env: dict[str, str] | None = None) -> None:
     print(f"+ {' '.join(command)}", flush=True)
-    completed = subprocess.run(command, check=False)
+    completed = subprocess.run(command, check=False, env=env)
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
 

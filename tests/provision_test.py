@@ -21,7 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ssid", required=True)
     parser.add_argument("--password", required=True)
     parser.add_argument("--scan-timeout", type=float, default=15.0)
-    parser.add_argument("--status-timeout", type=float, default=30.0)
+    parser.add_argument("--status-timeout", type=float, default=50.0)
     parser.add_argument(
         "--allow-name-fallback",
         action="store_true",

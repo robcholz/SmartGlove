@@ -1,2 +1,2 @@
 pub mod experiment;
-pub mod network;
+pub use network;

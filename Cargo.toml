@@ -1,38 +1,36 @@
 [package]
-edition = "2024"
 name = "smart-glove"
-rust-version = "1.93"
 version = "0.1.0"
-
-[workspace]
-members = ["xtask"]
+authors = ["Finn Sheng <yupbrokendream@gmail.com>"]
+edition = "2021"
 resolver = "2"
+rust-version = "1.82"
 
 [[bin]]
 name = "smart-glove"
-path = "./src/bin/main.rs"
-test = false
-
-[dependencies]
-defmt = "0.3.0"
-
-[target.'cfg(all(target_arch = "xtensa", target_os = "none"))'.dependencies]
-critical-section = "1.2.0"
-esp-bootloader-esp-idf = { version = "0.4.0", features = ["esp32s3"] }
-esp-hal = { version = "~1.0", features = ["esp32s3"] }
-esp-println = { version = "0.16.1", features = ["esp32s3", "defmt-espflash"] }
-
-
-[profile.dev]
-# Rust debug is too slow.
-# For debug builds always builds with some optimization
-opt-level = "s"
+harness = false # do not use the built-in cargo test harness -> resolve rust-analyzer errors
 
 [profile.release]
-codegen-units = 1     # LLVM can perform better optimizations using a single thread
-debug = 2
-debug-assertions = false
-incremental = false
-lto = 'fat'
-opt-level = 's'
-overflow-checks = false
+opt-level = "s"
+
+[profile.dev]
+debug = true    # Symbols are nice, and they don't increase the size on Flash
+opt-level = "z"
+[patch.crates-io]
+esp-idf-sys = { git = "https://github.com/esp-rs/esp-idf-sys.git" }
+esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal.git" }
+esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc.git" }
+
+[dependencies]
+log = "0.4"
+esp-idf-svc = { version = "0.52.1", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
+# Remove `generic-queue-8` if you plan to use `embassy-time` WITH `embassy-executor`
+embassy-time = { version = "0.5", features = ["generic-queue-8"] }
+
+[[package.metadata.esp-idf-sys.extra_components]]
+component_dirs = ["src/experiment/components"]
+bindings_header = "src/experiment/espdl_bindings.h"
+bindings_module = "espdl_experiment"
+
+[build-dependencies]
+embuild = "0.33"

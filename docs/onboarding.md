@@ -8,13 +8,6 @@ On the **host** machine, install:
 cargo install espflash
 ```
 
-Install and activate pre-commit hooks once per clone:
-
-```bash
-uv sync --group dev
-uv run pre-commit install --install-hooks --hook-type pre-commit --hook-type commit-msg --hook-type pre-push
-```
-
 ## Flash & Monitor
 
 Run this command in your **host**.

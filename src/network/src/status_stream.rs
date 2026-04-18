@@ -8,7 +8,7 @@ use esp_idf_svc::ws::{
 use serde::Serialize;
 
 use crate::{
-    registration::{build_event_json, build_online_json},
+    protocol::{build_event_json, build_online_json},
     NetworkError,
 };
 

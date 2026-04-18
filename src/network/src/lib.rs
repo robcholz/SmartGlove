@@ -1,8 +1,8 @@
-pub mod registration;
-pub mod status_report;
+pub mod protocol;
+pub mod status_stream;
 
-pub use registration::{send_device_info, DeviceInfo};
-pub use status_report::{
+pub use protocol::{send_device_info, DeviceInfo};
+pub use status_stream::{
     connect_status_reporter, mock_sensor_sample, FlexReadings, SensorSample, StatusReportConfig,
     StatusReporter,
 };

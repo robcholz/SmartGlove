@@ -1,0 +1,16 @@
+[package]
+name = "provision"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+embedded-svc = "0.29"
+enumset = "1.1.10"
+esp-idf-svc = { version = "0.52.1", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
+log = "0.4"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(esp_idf_btdm_ctrl_mode_br_edr_only)'] }

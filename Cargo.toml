@@ -7,11 +7,16 @@ resolver = "2"
 rust-version = "1.82"
 
 [workspace]
-members = ["src/drivers"]
+members = ["src/provision", "src/drivers"]
 
 [[bin]]
 name = "smart-glove"
 harness = false # do not use the built-in cargo test harness -> resolve rust-analyzer errors
+
+[[bin]]
+name = "provision"
+path = "src/bin/provision.rs"
+harness = false
 
 [profile.release]
 opt-level = "s"
@@ -29,6 +34,7 @@ log = "0.4"
 esp-idf-svc = { version = "0.52.1", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
 # Remove `generic-queue-8` if you plan to use `embassy-time` WITH `embassy-executor`
 embassy-time = { version = "0.5", features = ["generic-queue-8"] }
+provision = { path = "src/provision" }
 drivers = { path = "src/drivers" }
 
 [[package.metadata.esp-idf-sys.extra_components]]

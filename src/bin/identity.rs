@@ -6,7 +6,6 @@ fn main() {
     // Bind the log crate to the ESP Logging facilities
     esp_idf_svc::log::EspLogger::initialize_default();
 
-    let identity =
-        smart_glove::identity::DeviceIdentity::load().expect("failed to load device identity");
+    let identity = identity::DeviceIdentity::load().expect("failed to load device identity");
     log::info!("Loaded {}", identity.log_label());
 }

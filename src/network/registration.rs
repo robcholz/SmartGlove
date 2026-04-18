@@ -6,7 +6,7 @@ use embedded_svc::io::{Read, Write};
 use esp_idf_svc::http::client::{Configuration as HttpConfiguration, EspHttpConnection};
 use serde::{Deserialize, Serialize};
 
-use crate::identity::DeviceIdentity;
+use identity::DeviceIdentity;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RegistrationConfig {

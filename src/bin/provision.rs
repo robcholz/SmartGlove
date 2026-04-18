@@ -71,7 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        let _ = provisioner.stop();
+        // let _ = provisioner.stop();
         FreeRtos::delay_ms(1000);
     }
 

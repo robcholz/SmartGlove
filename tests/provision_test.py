@@ -11,6 +11,8 @@ from tests.serial_capture import SerialCapture
 PROVISION_SERVICE_UUID = "000012ff-0000-1000-8000-00805f9b34fb"
 PROVISION_CREDENTIALS_UUID = "0000ff01-0000-1000-8000-00805f9b34fb"
 PROVISION_STATUS_UUID = "0000ff02-0000-1000-8000-00805f9b34fb"
+PROVISION_MANUFACTURER_ID = 0xFFFF
+PROVISION_MAGIC = b"SG"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,6 +22,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--password", required=True)
     parser.add_argument("--scan-timeout", type=float, default=15.0)
     parser.add_argument("--status-timeout", type=float, default=30.0)
+    parser.add_argument(
+        "--allow-name-fallback",
+        action="store_true",
+        help="Allow matching by device name when the manufacturer marker is unavailable.",
+    )
     parser.add_argument("--serial-port")
     parser.add_argument("--serial-baudrate", type=int, default=115200)
     parser.add_argument("--serial-log", type=Path)
@@ -50,11 +57,7 @@ async def run_test(args: argparse.Namespace) -> int:
                 print("warning: PROVISION_READY was not seen on serial before BLE scan", flush=True)
 
         device = await BleakScanner.find_device_by_filter(
-            lambda _, advertisement: (
-                advertisement.local_name == args.device_name
-                or PROVISION_SERVICE_UUID.lower()
-                in {service.lower() for service in (advertisement.service_uuids or [])}
-            ),
+            lambda _, advertisement: advertisement_matches(args, advertisement),
             timeout=args.scan_timeout,
         )
         if device is None:
@@ -95,6 +98,22 @@ async def run_test(args: argparse.Namespace) -> int:
 def main() -> int:
     args = build_parser().parse_args()
     return asyncio.run(run_test(args))
+
+
+def advertisement_matches(args: argparse.Namespace, advertisement) -> bool:
+    manufacturer_data = advertisement.manufacturer_data or {}
+    marker = manufacturer_data.get(PROVISION_MANUFACTURER_ID)
+    if marker == PROVISION_MAGIC:
+        return True
+
+    if getattr(args, "allow_name_fallback", False):
+        return (
+            advertisement.local_name == args.device_name
+            or PROVISION_SERVICE_UUID.lower()
+            in {service.lower() for service in (advertisement.service_uuids or [])}
+        )
+
+    return False
 
 
 if __name__ == "__main__":

@@ -151,7 +151,7 @@ pub struct ProvisioningCallbacks {
 }
 
 pub trait ProvisionCapabilityProvider {
-    fn broadcast(&mut self, duration: Duration) -> Result<(), ProvisionError>;
+    fn broadcast(&mut self) -> Result<(), ProvisionError>;
 
     fn turn_off_broadcast(&mut self) -> Result<(), ProvisionError>;
 
@@ -212,17 +212,17 @@ where
                 }
             })));
 
-        self.provider.broadcast(self.advertising_window)?;
+        self.provider.broadcast()?;
 
         let credentials = match credentials_rx.recv_timeout(self.advertising_window) {
             Ok(credentials) => credentials,
             Err(_) => {
-                let _ = self.provider.turn_off_broadcast();
+                // let _ = self.provider.turn_off_broadcast();
                 return Err(ProvisionError::Timeout);
             }
         };
 
-        self.provider.turn_off_broadcast()?;
+        // self.provider.turn_off_broadcast()?;
         match self
             .provider
             .connect(&credentials.ssid, &credentials.password)?
@@ -269,6 +269,17 @@ const PROVISION_CREDENTIALS_UUID: u16 = 0xFF01;
 const PROVISION_STATUS_UUID: u16 = 0xFF02;
 #[cfg(not(esp_idf_btdm_ctrl_mode_br_edr_only))]
 const CLIENT_CONFIG_DESCRIPTOR_UUID: u16 = 0x2902;
+#[cfg(not(esp_idf_btdm_ctrl_mode_br_edr_only))]
+const PROVISION_MANUFACTURER_ID: u16 = 0xFFFF;
+#[cfg(not(esp_idf_btdm_ctrl_mode_br_edr_only))]
+const PROVISION_MAGIC: &[u8] = b"SG";
+#[cfg(not(esp_idf_btdm_ctrl_mode_br_edr_only))]
+const PROVISION_MANUFACTURER_DATA: [u8; 4] = [
+    (PROVISION_MANUFACTURER_ID & 0x00FF) as u8,
+    (PROVISION_MANUFACTURER_ID >> 8) as u8,
+    PROVISION_MAGIC[0],
+    PROVISION_MAGIC[1],
+];
 
 #[cfg(not(esp_idf_btdm_ctrl_mode_br_edr_only))]
 #[derive(Default)]
@@ -588,8 +599,7 @@ impl<'d> EspProvisionCapabilityProvider<'d> {
 
 #[cfg(not(esp_idf_btdm_ctrl_mode_br_edr_only))]
 impl<'d> ProvisionCapabilityProvider for EspProvisionCapabilityProvider<'d> {
-    fn broadcast(&mut self, duration: Duration) -> Result<(), ProvisionError> {
-        let _ = duration;
+    fn broadcast(&mut self) -> Result<(), ProvisionError> {
         self.configure_stack_if_needed()?;
 
         {
@@ -854,6 +864,7 @@ fn adv_configuration() -> AdvConfiguration<'static> {
         appearance: AppearanceCategory::Unknown,
         flag: 2,
         service_uuid: None,
+        manufacturer_data: Some(&PROVISION_MANUFACTURER_DATA),
         ..Default::default()
     }
 }

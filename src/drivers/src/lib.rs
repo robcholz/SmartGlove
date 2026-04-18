@@ -91,10 +91,7 @@ where
         Self { channel }
     }
 
-    pub fn new_with_pin(
-        adc: M,
-        pin: impl ADCPin<AdcChannel = C> + 'd,
-    ) -> Result<Self, EspError> {
+    pub fn new_with_pin(adc: M, pin: impl ADCPin<AdcChannel = C> + 'd) -> Result<Self, EspError> {
         let config = AdcChannelConfig {
             attenuation: DB_12,
             ..Default::default()

@@ -26,12 +26,12 @@ fn main() {
     .expect("failed to initialize I2C");
 
     let mut delay = FreeRtos;
-    let mut imu =
-        Mpu6050Imu::new_with_addr(i2c, IMU_I2C_ADDRESS, &mut delay).expect("failed to init MPU6050");
+    let mut imu = Mpu6050Imu::new_with_addr(i2c, IMU_I2C_ADDRESS, &mut delay)
+        .expect("failed to init MPU6050");
 
     let adc = AdcDriver::new(peripherals.adc1).expect("failed to initialize ADC1");
-    let mut flex_sensor =
-        AnalogFlexSensor::new_with_pin(&adc, peripherals.pins.gpio2).expect("failed to initialize flex sensor");
+    let mut flex_sensor = AnalogFlexSensor::new_with_pin(&adc, peripherals.pins.gpio2)
+        .expect("failed to initialize flex sensor");
 
     log::info!("driver probe started");
 

@@ -1,6 +1,7 @@
 # rust
 debug/
 target/
+.embuild/
 
 # python
 .venv/

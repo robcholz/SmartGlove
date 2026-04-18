@@ -5,6 +5,7 @@ target/
 
 # python
 .venv/
+.uv-cache/
 
 # ide
 .vscode/
@@ -13,3 +14,5 @@ target/
 
 # macos
 **/.DS_Store
+
+.env.local

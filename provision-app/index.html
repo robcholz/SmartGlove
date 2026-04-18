@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SmartGlove Provisioning</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero-card">
+        <p class="eyebrow">SmartGlove Provisioning</p>
+        <h1>Find nearby gloves and move them onto Wi-Fi.</h1>
+        <p class="hero-copy">
+          This app scans for provisioning-capable SmartGlove devices, connects
+          over BLE, and sends the Wi-Fi credentials directly to the selected
+          unit.
+        </p>
+        <div class="hero-actions">
+          <button id="scan-button" class="primary-button">Start BLE Scan</button>
+          <button id="picker-button" class="ghost-button">Add via Browser Picker</button>
+        </div>
+        <p id="browser-hint" class="hint-text"></p>
+      </section>
+
+      <section class="panel-grid">
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-label">Devices</p>
+              <h2>Nearby SmartGloves</h2>
+            </div>
+            <span id="scan-state" class="status-pill idle">Idle</span>
+          </div>
+          <div id="device-list" class="device-list" aria-live="polite"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-label">Provision</p>
+              <h2 id="selected-title">No device selected</h2>
+            </div>
+            <span id="device-state" class="status-pill idle">Disconnected</span>
+          </div>
+
+          <form id="provision-form" class="provision-form">
+            <label class="field">
+              <span>Wi-Fi SSID</span>
+              <input id="ssid-input" name="ssid" autocomplete="username" required />
+            </label>
+            <label class="field">
+              <span>Wi-Fi Password</span>
+              <input
+                id="password-input"
+                name="password"
+                type="password"
+                autocomplete="current-password"
+                required
+              />
+            </label>
+
+            <div class="form-actions">
+              <button id="connect-button" class="primary-button" type="submit" disabled>
+                Connect Device
+              </button>
+              <button id="disconnect-button" class="ghost-button" type="button" disabled>
+                Disconnect
+              </button>
+            </div>
+          </form>
+
+          <div class="status-board">
+            <div>
+              <p class="panel-label">Live Status</p>
+              <p id="status-text" class="status-text">Waiting for a device.</p>
+            </div>
+            <div>
+              <p class="panel-label">Marker</p>
+              <p id="marker-text" class="marker-text">Not scanned yet</p>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel log-panel">
+        <div class="panel-header">
+          <div>
+            <p class="panel-label">Session Log</p>
+            <h2>Events</h2>
+          </div>
+          <button id="clear-log-button" class="ghost-button">Clear Log</button>
+        </div>
+        <div id="log-view" class="log-view" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <template id="device-row-template">
+      <button class="device-row" type="button">
+        <div class="device-row-main">
+          <strong class="device-name"></strong>
+          <span class="device-id"></span>
+        </div>
+        <div class="device-row-meta">
+          <span class="device-rssi"></span>
+          <span class="device-marker"></span>
+        </div>
+      </button>
+    </template>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

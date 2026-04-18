@@ -1,0 +1,12 @@
+[package]
+name = "drivers"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+embedded-hal-02 = { package = "embedded-hal", version = "0.2.7" }
+esp-idf-hal = "0.46.2"
+mpu6050 = "0.1.6"

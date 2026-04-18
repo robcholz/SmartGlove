@@ -28,6 +28,11 @@ name = "driver"
 path = "src/bin/driver.rs"
 harness = false
 
+[[bin]]
+name = "registration_probe"
+path = "src/bin/registration_probe.rs"
+harness = false
+
 [profile.release]
 opt-level = "s"
 

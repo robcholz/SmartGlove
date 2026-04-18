@@ -13,3 +13,5 @@ target/
 
 # macos
 **/.DS_Store
+
+.env.local

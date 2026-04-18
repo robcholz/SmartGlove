@@ -7,7 +7,8 @@ resolver = "2"
 rust-version = "1.82"
 
 [[bin]]
-name = "smart-glove"
+name = "identity_probe"
+path = "src/bin/identity_probe.rs"
 harness = false # do not use the built-in cargo test harness -> resolve rust-analyzer errors
 
 [profile.release]

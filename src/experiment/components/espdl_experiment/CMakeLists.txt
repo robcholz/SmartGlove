@@ -7,12 +7,18 @@ endif()
 
 set(embed_file "model.espdl")
 set(utilities_cmake "${espdl_dir}/fbs_loader/cmake/utilities.cmake")
+set(cmake_dir "${espdl_dir}/fbs_loader/cmake")
+set(component_embed_args)
+
+if(NOT EXISTS "${utilities_cmake}")
+    set(component_embed_args EMBED_FILES ${embed_file})
+endif()
 
 idf_component_register(
     SRCS "espdl_experiment.cpp"
     INCLUDE_DIRS "."
     REQUIRES espressif__esp-dl
-    EMBED_FILES ${embed_file}
+    ${component_embed_args}
 )
 
 if(EXISTS "${utilities_cmake}")

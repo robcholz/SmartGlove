@@ -12,16 +12,16 @@ cargo install espflash
 
 Run this command in your **host**.
 
-Debug:
+Dev:
 
 ```bash
-espflash flash --monitor target/xtensa-esp32s3-none-elf/debug/smart-glove
+uv run --script uv_tasks.py
 ```
 
-Release:
+Flash:
 
 ```bash
-espflash flash --monitor target/xtensa-esp32s3-none-elf/release/smart-glove
+cargo run
 ```
 
 ## Notes

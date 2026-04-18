@@ -15,6 +15,7 @@ typedef struct {
     uint32_t input_count;
     uint32_t output_count;
     uint32_t output_checksum;
+    char output_preview[256];
     char message[96];
 } espdl_experiment_result_t;
 

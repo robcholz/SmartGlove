@@ -1,5 +1,9 @@
 use core::fmt;
+use std::time::Duration;
 
+use embedded_svc::http::client::Client;
+use embedded_svc::io::{Read, Write};
+use esp_idf_svc::http::client::{Configuration as HttpConfiguration, EspHttpConnection};
 use serde::{Deserialize, Serialize};
 
 use crate::identity::DeviceIdentity;
@@ -54,6 +58,7 @@ impl RegistrationResponse {
 pub enum RegistrationError {
     InvalidRequest,
     Transport,
+    UnexpectedStatus(u16),
     InvalidResponse,
 }
 
@@ -62,6 +67,9 @@ impl fmt::Display for RegistrationError {
         match self {
             Self::InvalidRequest => f.write_str("registration request was invalid"),
             Self::Transport => f.write_str("registration transport failed"),
+            Self::UnexpectedStatus(status) => {
+                write!(f, "registration server returned HTTP status {status}")
+            }
             Self::InvalidResponse => f.write_str("registration response was invalid"),
         }
     }
@@ -75,6 +83,7 @@ pub fn register_device(
 ) -> Result<RegistrationResponse, RegistrationError> {
     let request = RegistrationRequest::from_identity(identity);
     let request_json = request.to_json()?;
+    let content_length = request_json.len().to_string();
 
     log::info!(
         "prepared registration request for device_id={} endpoint={} body_len={}",
@@ -83,5 +92,67 @@ pub fn register_device(
         request_json.len()
     );
 
-    Err(RegistrationError::Transport)
+    let connection = EspHttpConnection::new(&HttpConfiguration {
+        timeout: Some(Duration::from_secs(10)),
+        ..Default::default()
+    })
+    .map_err(|_| RegistrationError::Transport)?;
+    let mut client = Client::wrap(connection);
+    let headers = [
+        ("Content-Type", "application/json"),
+        ("Content-Length", content_length.as_str()),
+    ];
+
+    let mut http_request = client
+        .post(config.endpoint, &headers)
+        .map_err(|_| RegistrationError::Transport)?;
+    write_all(&mut http_request, request_json.as_bytes())?;
+    let mut http_response = http_request
+        .submit()
+        .map_err(|_| RegistrationError::Transport)?;
+
+    let status = http_response.status();
+    if !(200..300).contains(&status) {
+        return Err(RegistrationError::UnexpectedStatus(status));
+    }
+
+    let response_json = read_to_string(&mut http_response)?;
+    RegistrationResponse::from_json(&response_json)
+}
+
+fn write_all<W>(writer: &mut W, mut bytes: &[u8]) -> Result<(), RegistrationError>
+where
+    W: Write,
+{
+    while !bytes.is_empty() {
+        let written = writer
+            .write(bytes)
+            .map_err(|_| RegistrationError::Transport)?;
+        if written == 0 {
+            return Err(RegistrationError::Transport);
+        }
+        bytes = &bytes[written..];
+    }
+
+    writer.flush().map_err(|_| RegistrationError::Transport)
+}
+
+fn read_to_string<R>(reader: &mut R) -> Result<String, RegistrationError>
+where
+    R: Read,
+{
+    let mut body = Vec::new();
+    let mut buffer = [0_u8; 512];
+
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|_| RegistrationError::Transport)?;
+        if read == 0 {
+            break;
+        }
+        body.extend_from_slice(&buffer[..read]);
+    }
+
+    String::from_utf8(body).map_err(|_| RegistrationError::InvalidResponse)
 }

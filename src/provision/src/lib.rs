@@ -223,6 +223,11 @@ where
         };
 
         // self.provider.turn_off_broadcast()?;
+        log::info!(
+            "wifi ssid={}, password={}",
+            credentials.ssid,
+            credentials.password
+        );
         match self
             .provider
             .connect(&credentials.ssid, &credentials.password)?

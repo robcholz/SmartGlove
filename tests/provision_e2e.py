@@ -15,9 +15,15 @@ from tests.provision_test import run_test
 
 
 class ProcessCapture:
-    def __init__(self, command: list[str], log_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        command: list[str],
+        log_path: Path | None = None,
+        env: dict[str, str] | None = None,
+    ) -> None:
         self.command = command
         self.log_path = log_path
+        self.env = env
         self.process: subprocess.Popen[str] | None = None
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -34,6 +40,7 @@ class ProcessCapture:
                 stdin=subprocess.PIPE,
                 text=True,
                 bufsize=1,
+                env=self.env,
             )
         else:
             master_fd, slave_fd = os.openpty()
@@ -46,6 +53,7 @@ class ProcessCapture:
                     stderr=slave_fd,
                     text=False,
                     close_fds=True,
+                    env=self.env,
                 )
             finally:
                 os.close(slave_fd)
@@ -171,6 +179,52 @@ def resolve_credentials(args: argparse.Namespace) -> tuple[str, str]:
     return ssid, password
 
 
+def resolve_espflash_port(preferred_port: str | None = None) -> str:
+    if preferred_port:
+        return preferred_port
+
+    env_port = os.environ.get("ESPFLASH_PORT")
+    if env_port:
+        return env_port
+
+    completed = subprocess.run(
+        ["espflash", "list-ports"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise SystemExit(
+            "failed to resolve ESPFLASH_PORT: `espflash list-ports` did not succeed"
+        )
+
+    raw_ports = [
+        line.split()[0]
+        for line in completed.stdout.splitlines()
+        if line.startswith("/dev/")
+    ]
+    preferred_ports = [port for port in raw_ports if port.startswith("/dev/cu.")]
+    candidates = sorted(dict.fromkeys(preferred_ports or raw_ports))
+    if not candidates:
+        raise SystemExit("failed to resolve ESPFLASH_PORT: no ESP serial ports found")
+    if len(candidates) != 1:
+        raise SystemExit(
+            "failed to resolve ESPFLASH_PORT automatically: found "
+            + ", ".join(candidates)
+            + "; pass --serial-port or set ESPFLASH_PORT"
+        )
+
+    return candidates[0]
+
+
+def build_firmware_env(serial_port: str | None = None) -> dict[str, str]:
+    env = os.environ.copy()
+    env["CARGO_TERM_COLOR"] = "always"
+    env["ESPFLASH_PORT"] = resolve_espflash_port(serial_port)
+    print(f"using ESPFLASH_PORT={env['ESPFLASH_PORT']}", flush=True)
+    return env
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Build, flash, and run the SmartGlove BLE provisioning test end to end."
@@ -202,9 +256,9 @@ def cargo_profile_flag(build_mode: str) -> list[str]:
     return ["--release"] if build_mode == "release" else []
 
 
-def run_command(command: list[str]) -> None:
+def run_command(command: list[str], env: dict[str, str] | None = None) -> None:
     print(f"+ {' '.join(command)}", flush=True)
-    completed = subprocess.run(command, check=False)
+    completed = subprocess.run(command, check=False, env=env)
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
 
@@ -212,19 +266,32 @@ def run_command(command: list[str]) -> None:
 def main() -> int:
     args = build_parser().parse_args()
     args.ssid, args.password = resolve_credentials(args)
+    firmware_env = build_firmware_env(args.serial_port)
 
     if not args.skip_build:
-        run_command(["cargo", "build", *cargo_profile_flag(args.build_mode), "--bin", "provision"])
+        run_command(
+            [
+                "cargo",
+                "build",
+                *cargo_profile_flag(args.build_mode),
+                "--bin",
+                "provision",
+            ],
+            env=firmware_env,
+        )
 
     firmware = ProcessCapture(
         ["cargo", "run", *cargo_profile_flag(args.build_mode), "--bin", "provision"],
         log_path=args.firmware_log,
+        env=firmware_env,
     )
     firmware.start()
 
     try:
         firmware.wait_for("PROVISION_READY", timeout=args.firmware_timeout)
-        firmware.wait_for("PROVISION_STATUS Broadcasting", timeout=args.firmware_timeout)
+        firmware.wait_for(
+            "PROVISION_STATUS Broadcasting", timeout=args.firmware_timeout
+        )
 
         result = asyncio.run(run_test(args))
 

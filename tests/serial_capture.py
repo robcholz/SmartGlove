@@ -70,10 +70,17 @@ class SerialCapture:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Capture ESP serial output.")
-    parser.add_argument("--port", required=True, help="Serial port, for example /dev/tty.usbmodem1101")
+    parser.add_argument(
+        "--port", required=True, help="Serial port, for example /dev/tty.usbmodem1101"
+    )
     parser.add_argument("--baudrate", type=int, default=115200)
     parser.add_argument("--log-path", type=Path)
-    parser.add_argument("--duration", type=float, default=0.0, help="Seconds to capture. 0 means until Ctrl+C.")
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=0.0,
+        help="Seconds to capture. 0 means until Ctrl+C.",
+    )
     return parser
 
 

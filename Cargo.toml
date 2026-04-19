@@ -55,8 +55,8 @@ drivers = { path = "src/drivers" }
 network = { path = "src/network" }
 
 [[package.metadata.esp-idf-sys.extra_components]]
-component_dirs = ["src/experiment/components"]
-bindings_header = "src/experiment/espdl_bindings.h"
+component_dirs = ["src/inference/components"]
+bindings_header = "src/inference/espdl_bindings.h"
 bindings_module = "espdl_experiment"
 
 [[package.metadata.esp-idf-sys.extra_components]]

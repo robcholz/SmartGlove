@@ -1,14 +1,14 @@
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
     println!("cargo::rerun-if-changed=src/inference/generated.rs");
-    println!("cargo::rerun-if-changed=src/experiment/components/espdl_experiment/CMakeLists.txt");
+    println!("cargo::rerun-if-changed=src/inference/components/espdl_experiment/CMakeLists.txt");
     println!(
-        "cargo::rerun-if-changed=src/experiment/components/espdl_experiment/espdl_experiment.cpp"
+        "cargo::rerun-if-changed=src/inference/components/espdl_experiment/espdl_experiment.cpp"
     );
     println!(
-        "cargo::rerun-if-changed=src/experiment/components/espdl_experiment/espdl_experiment.h"
+        "cargo::rerun-if-changed=src/inference/components/espdl_experiment/espdl_experiment.h"
     );
-    println!("cargo::rerun-if-changed=src/experiment/components/espdl_experiment/model.espdl");
+    println!("cargo::rerun-if-changed=src/inference/components/espdl_experiment/model.espdl");
     println!("cargo::rustc-check-cfg=cfg(esp_idf_comp_espdl_experiment_enabled)");
     println!("cargo::rustc-check-cfg=cfg(esp_idf_comp_espressif__esp_dl_enabled)");
     println!("cargo::rustc-check-cfg=cfg(esp_idf_btdm_ctrl_mode_br_edr_only)");

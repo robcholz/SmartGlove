@@ -4,17 +4,50 @@ use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::hal::i2c::{I2cConfig, I2cDriver};
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::hal::units::*;
+use smart_glove::inference::{
+    run_quantized_self_test, run_raw_sensor_input_with_scratch, SlidingWindow, MODEL_INPUT_LEN,
+    MODEL_WINDOW_SIZE,
+};
+use std::thread;
 
 const IMU_I2C_ADDRESS: u8 = 0x68;
+const SAMPLE_INTERVAL_MS: u32 = 10;
+const INFERENCE_INTERVAL_FRAMES: usize = 10;
+const LIVE_INFERENCE_STACK_SIZE: usize = 24 * 1024;
 
 fn main() {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
 
+    log::info!("smart-glove live inference startup");
+
+    let worker = thread::Builder::new()
+        .name("live-inference".into())
+        .stack_size(LIVE_INFERENCE_STACK_SIZE)
+        .spawn(run_live_inference)
+        .expect("failed to spawn live inference worker");
+
+    if let Err(err) = worker.join() {
+        panic!("live inference worker panicked: {:?}", err);
+    }
+}
+
+fn run_live_inference() {
+    match run_quantized_self_test() {
+        Ok(report) => log::info!(
+            "esp-dl self-test ok: predicted_label={} exact_quantized_match={} max_dequantized_abs_error={:.6}",
+            report.inference.predicted_label,
+            report.exact_quantized_match,
+            report.max_dequantized_abs_error
+        ),
+        Err(err) => {
+            log::error!("esp-dl self-test failed before live inference: {err}");
+            return;
+        }
+    }
+
     let peripherals = Peripherals::take().expect("failed to take peripherals");
 
-    // - MPU6050 on I2C0 with SDA=GPIO47, SCL=GPIO48
-    // - Five analog flex sensors on ADC1 / GPIO4..GPIO8
     let i2c_config = I2cConfig::new().baudrate(100.kHz().into());
     let i2c = I2cDriver::new(
         peripherals.i2c0,
@@ -25,8 +58,17 @@ fn main() {
     .expect("failed to initialize I2C");
 
     let mut delay = FreeRtos;
-    let mut imu = Mpu6050Imu::new_with_addr(i2c, IMU_I2C_ADDRESS, &mut delay)
-        .expect("failed to init MPU6050");
+    let mut imu = match Mpu6050Imu::new_with_addr(i2c, IMU_I2C_ADDRESS, &mut delay) {
+        Ok(imu) => imu,
+        Err(err) => {
+            log::error!(
+                "failed to init MPU6050 on gpio47/gpio48 at address 0x{:02x}: {:?}",
+                IMU_I2C_ADDRESS,
+                err
+            );
+            return;
+        }
+    };
 
     let adc = AdcDriver::new(peripherals.adc1).expect("failed to initialize ADC1");
     let mut thumb_finger = AnalogFlexSensor::new_with_pin(&adc, peripherals.pins.gpio4)
@@ -40,44 +82,115 @@ fn main() {
     let mut pinky_finger = AnalogFlexSensor::new_with_pin(&adc, peripherals.pins.gpio8)
         .expect("failed to init pinky sensor");
 
-    log::info!("driver started");
+    let mut sliding_window = Box::new(SlidingWindow::new());
+    let mut feature_input = Box::new([0.0f32; MODEL_INPUT_LEN]);
+    let mut normalized_window = Box::new([0.0f32; MODEL_INPUT_LEN]);
+    let mut frame_counter = 0usize;
 
     loop {
-        match imu.read_acc() {
-            Ok(acc) => log::info!("imu acc: x={:.3}, y={:.3}, z={:.3}", acc[0], acc[1], acc[2]),
-            Err(err) => log::error!("failed to read accelerometer: {:?}", err),
+        let acc = match imu.read_acc() {
+            Ok(acc) => acc,
+            Err(err) => {
+                log::error!("failed to read accelerometer: {:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
+
+        let thumb = match thumb_finger.read_value() {
+            Ok(value) => value,
+            Err(err) => {
+                log::error!("failed to read thumb flex sensor: {:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
+        let index = match index_finger.read_value() {
+            Ok(value) => value,
+            Err(err) => {
+                log::error!("failed to read index flex sensor: {:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
+        let middle = match middle_finger.read_value() {
+            Ok(value) => value,
+            Err(err) => {
+                log::error!("failed to read middle flex sensor: {:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
+        let ring = match ring_finger.read_value() {
+            Ok(value) => value,
+            Err(err) => {
+                log::error!("failed to read ring flex sensor: {:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
+        let pinky = match pinky_finger.read_value() {
+            Ok(value) => value,
+            Err(err) => {
+                log::error!("failed to read pinky flex sensor: {:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
+
+        let frame = [
+            thumb as f32,
+            index as f32,
+            middle as f32,
+            ring as f32,
+            pinky as f32,
+            acc[0],
+            acc[1],
+            acc[2],
+        ];
+
+        sliding_window.push_frame(frame);
+        frame_counter += 1;
+
+        if sliding_window.is_full() && frame_counter % INFERENCE_INTERVAL_FRAMES == 0 {
+            if sliding_window.extract_features_into(feature_input.as_mut()) {
+                match run_raw_sensor_input_with_scratch(
+                    feature_input.as_ref(),
+                    normalized_window.as_mut(),
+                ) {
+                    Ok(result) => {
+                        let top3 = result.top_predictions(3);
+                        if top3.len() < 3 {
+                            log::error!(
+                                "gesture inference returned too few predictions: {}",
+                                top3.len()
+                            );
+                            FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                            continue;
+                        }
+                        log::info!(
+                            "gesture classification: label={} top3=[{}:{:.3}, {}:{:.3}, {}:{:.3}]",
+                            result.predicted_label,
+                            top3[0].label,
+                            top3[0].score,
+                            top3[1].label,
+                            top3[1].score,
+                            top3[2].label,
+                            top3[2].score,
+                        );
+                    }
+                    Err(err) => log::error!("gesture inference failed: {err}"),
+                }
+            }
+        } else if frame_counter % 25 == 0 {
+            log::info!(
+                "collecting samples: buffered={}/{} latest_frame={:?}",
+                sliding_window.len(),
+                MODEL_WINDOW_SIZE,
+                frame
+            );
         }
 
-        match imu.read_vec() {
-            Ok(vec) => log::info!("imu vec: x={:.3}, y={:.3}, z={:.3}", vec[0], vec[1], vec[2]),
-            Err(err) => log::error!("failed to read vector: {:?}", err),
-        }
-
-        match thumb_finger.read_value() {
-            Ok(value) => log::info!("thumb flex sensor: {}", value),
-            Err(err) => log::error!("failed to read thumb flex sensor: {:?}", err),
-        }
-
-        match index_finger.read_value() {
-            Ok(value) => log::info!("index flex sensor: {}", value),
-            Err(err) => log::error!("failed to read index flex sensor: {:?}", err),
-        }
-
-        match middle_finger.read_value() {
-            Ok(value) => log::info!("middle flex sensor: {}", value),
-            Err(err) => log::error!("failed to read middle flex sensor: {:?}", err),
-        }
-
-        match ring_finger.read_value() {
-            Ok(value) => log::info!("ring flex sensor: {}", value),
-            Err(err) => log::error!("failed to read ring flex sensor: {:?}", err),
-        }
-
-        match pinky_finger.read_value() {
-            Ok(value) => log::info!("pinky flex sensor: {}", value),
-            Err(err) => log::error!("failed to read pinky flex sensor: {:?}", err),
-        }
-
-        FreeRtos::delay_ms(500u32);
+        FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
     }
 }

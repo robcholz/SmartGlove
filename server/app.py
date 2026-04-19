@@ -58,8 +58,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         state: NetworkState = request.app.state.network_state
         state.register_device(payload)
         logger.info(
-            "registered device_info device_id=%s events=%s",
+            "registered device_info device_id=%s kind=%s events=%s",
             payload.device_id,
+            payload.kind,
             payload.events,
         )
         return AckResponse()

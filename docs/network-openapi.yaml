@@ -25,7 +25,8 @@ paths:
         - Device Info
       summary: Publish device metadata
       description: >
-        Called by the device to advertise its `device_id` and the list of event names it may emit.
+        Called by the device to advertise its `device_id`, `kind`, and the list of event names it
+        may emit.
         The current client accepts any `2xx` status and ignores the response body.
       operationId: sendDeviceInfo
       requestBody:
@@ -38,6 +39,7 @@ paths:
               default:
                 value:
                   device_id: aca704299de8
+                  kind: glove
                   events:
                     - gesture.wave
                     - gesture.fist
@@ -142,6 +144,12 @@ components:
           type: string
           description: Lowercase hexadecimal device identifier derived from the ESP factory MAC.
           pattern: '^[0-9a-f]{12}$'
+        kind:
+          type: string
+          description: Device class.
+          enum:
+            - glove
+            - machine
         events:
           type: array
           description: Event names this device may emit over the WebSocket stream.
@@ -150,6 +158,7 @@ components:
           minItems: 0
       required:
         - device_id
+        - kind
         - events
 
     DeviceOnlineFrame:

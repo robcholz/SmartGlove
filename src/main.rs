@@ -16,7 +16,8 @@ use esp_idf_svc::hal::units::*;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use identity::DeviceId;
 use network::{
-    connect_status_reporter, send_device_info, FlexReadings, SensorSample, StatusReportConfig,
+    connect_status_reporter, send_device_info, DeviceKind, FlexReadings, SensorSample,
+    StatusReportConfig,
 };
 use provision::{
     BasicProvision, EspProvisionCapabilityProvider, Provision, ProvisionCapabilityProvider,
@@ -29,6 +30,7 @@ const SAMPLE_INTERVAL_MS: u32 = 10;
 const INFERENCE_INTERVAL_FRAMES: usize = 10;
 const LIVE_INFERENCE_STACK_SIZE: usize = 24 * 1024;
 const DEVICE_NAME: &str = "SmartGlove Provision";
+const DEVICE_KIND: DeviceKind = DeviceKind::Glove;
 const ADVERTISING_WINDOW: Duration = Duration::from_secs(10);
 const EVENT_PREFIX: &str = "event.infer.";
 const EVENT_PAYLOAD_JSON: &str = "null";
@@ -179,7 +181,7 @@ fn run_live_inference(config: RuntimeConfig) -> Result<(), Box<dyn std::error::E
         .map(|label| format!("{EVENT_PREFIX}{label}"))
         .collect::<Vec<_>>();
     let events = event_names.iter().map(String::as_str).collect::<Vec<_>>();
-    let status = send_device_info(&config.device_info_url, &device_id, &events)?;
+    let status = send_device_info(&config.device_info_url, &device_id, DEVICE_KIND, &events)?;
     log::debug!("sent device info to server with http status {}", status);
 
     let status_config = StatusReportConfig {

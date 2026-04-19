@@ -21,6 +21,7 @@ class ServerAppTest(unittest.TestCase):
             "/v1/device-info",
             json={
                 "device_id": "aca704299de8",
+                "kind": "glove",
                 "events": ["gesture.wave", "battery.low"],
             },
         )
@@ -31,7 +32,7 @@ class ServerAppTest(unittest.TestCase):
     def test_device_info_rejects_invalid_payload_as_bad_request(self) -> None:
         response = self.client.post(
             "/v1/device-info",
-            json={"device_id": "BAD-ID", "events": ["gesture.wave"]},
+            json={"device_id": "BAD-ID", "kind": "glove", "events": ["gesture.wave"]},
         )
 
         self.assertEqual(response.status_code, 400)
@@ -40,22 +41,35 @@ class ServerAppTest(unittest.TestCase):
     def test_device_info_overwrites_latest_metadata(self) -> None:
         first = self.client.post(
             "/v1/device-info",
-            json={"device_id": "aca704299de8", "events": ["gesture.wave"]},
+            json={
+                "device_id": "aca704299de8",
+                "kind": "glove",
+                "events": ["gesture.wave"],
+            },
         )
         second = self.client.post(
             "/v1/device-info",
-            json={"device_id": "aca704299de8", "events": ["battery.low"]},
+            json={
+                "device_id": "aca704299de8",
+                "kind": "machine",
+                "events": ["battery.low"],
+            },
         )
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
         snapshot = self.app.state.network_state.snapshot()
+        self.assertEqual(snapshot["devices"]["aca704299de8"]["kind"], "machine")
         self.assertEqual(snapshot["devices"]["aca704299de8"]["events"], ["battery.low"])
 
     def test_websocket_accepts_contract_frames(self) -> None:
         self.client.post(
             "/v1/device-info",
-            json={"device_id": "aca704299de8", "events": ["battery.low"]},
+            json={
+                "device_id": "aca704299de8",
+                "kind": "glove",
+                "events": ["battery.low"],
+            },
         )
 
         with self.client.websocket_connect("/v1/ws") as websocket:
@@ -97,7 +111,11 @@ class ServerAppTest(unittest.TestCase):
     def test_network_state_marks_online_transition_once(self) -> None:
         self.client.post(
             "/v1/device-info",
-            json={"device_id": "aca704299de8", "events": ["battery.low"]},
+            json={
+                "device_id": "aca704299de8",
+                "kind": "glove",
+                "events": ["battery.low"],
+            },
         )
 
         with self.client.websocket_connect("/v1/ws") as websocket:

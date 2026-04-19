@@ -6,7 +6,9 @@ use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::log::EspLogger;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use identity::DeviceId;
-use network::{connect_status_reporter, mock_sensor_sample, send_device_info, StatusReportConfig};
+use network::{
+    connect_status_reporter, mock_sensor_sample, send_device_info, DeviceKind, StatusReportConfig,
+};
 use provision::{
     BasicProvision, EspProvisionCapabilityProvider, Provision, ProvisionCapabilityProvider,
     ProvisionError,
@@ -14,6 +16,7 @@ use provision::{
 use smart_glove::runtime_config::load_runtime_config;
 
 const DEVICE_NAME: &str = "SmartGlove Provision";
+const DEVICE_KIND: DeviceKind = DeviceKind::Glove;
 const ADVERTISING_WINDOW: Duration = Duration::from_secs(10);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -83,7 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let events = [config.event_name.as_str()];
-    let status = send_device_info(&config.device_info_url, &device_id, &events)?;
+    let status = send_device_info(&config.device_info_url, &device_id, DEVICE_KIND, &events)?;
     log::info!("NETWORK_DEVICE_INFO_SENT status={status}");
 
     let status_config = StatusReportConfig {

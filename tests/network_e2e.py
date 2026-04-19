@@ -169,6 +169,8 @@ def restore_runtime_config(previous: str) -> None:
 
 def assert_device_info(payload: dict) -> str:
     validate_device_info_request(payload)
+    if payload["kind"] != "glove":
+        raise AssertionError(payload)
     if payload["events"] != [EXPECTED_EVENT_NAME]:
         raise AssertionError(payload)
     return payload["device_id"]

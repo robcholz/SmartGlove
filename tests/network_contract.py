@@ -73,6 +73,11 @@ def _validate(
             f"{path} expected constant {schema['const']!r}, got {instance!r}"
         )
 
+    if "enum" in schema and instance not in schema["enum"]:
+        raise ContractValidationError(
+            f"{path} expected one of {schema['enum']!r}, got {instance!r}"
+        )
+
     schema_type = schema.get("type")
     if schema_type == "object":
         if not isinstance(instance, dict):

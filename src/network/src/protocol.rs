@@ -4,15 +4,24 @@ use serde::Serialize;
 
 use crate::NetworkError;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DeviceKind {
+    Glove,
+    Machine,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeviceInfo<'a> {
     pub device_id: &'a str,
+    pub kind: DeviceKind,
     pub events: &'a [&'a str],
 }
 
 #[derive(Serialize)]
 struct DeviceInfoPayload<'a> {
     device_id: &'a str,
+    kind: DeviceKind,
     events: &'a [&'a str],
 }
 
@@ -31,9 +40,14 @@ struct EventPayload<'a> {
 }
 
 impl<'a> DeviceInfo<'a> {
-    pub fn from_identity(identity: &'a DeviceIdentity, events: &'a [&'a str]) -> Self {
+    pub fn from_identity(
+        identity: &'a DeviceIdentity,
+        kind: DeviceKind,
+        events: &'a [&'a str],
+    ) -> Self {
         Self {
             device_id: Box::leak(identity.device_id().to_hex_string().into_boxed_str()),
+            kind,
             events,
         }
     }
@@ -42,6 +56,7 @@ impl<'a> DeviceInfo<'a> {
 pub fn send_device_info(
     endpoint: &str,
     device_id: &str,
+    kind: DeviceKind,
     events: &[&str],
 ) -> Result<u16, NetworkError> {
     if endpoint.is_empty() {
@@ -50,7 +65,11 @@ pub fn send_device_info(
         ));
     }
 
-    let body = serde_json::to_string(&DeviceInfoPayload { device_id, events })?;
+    let body = serde_json::to_string(&DeviceInfoPayload {
+        device_id,
+        kind,
+        events,
+    })?;
     let content_length = body.len().to_string();
     let headers = [
         ("Content-Type", "application/json"),

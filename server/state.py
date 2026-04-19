@@ -17,6 +17,7 @@ StoredFrame = DeviceOnlineFrame | DeviceEventFrame | SensorBatchFrame
 
 @dataclass
 class DeviceRecord:
+    kind: str | None = None
     events: tuple[str, ...] = ()
     connected: bool = False
     last_seen_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -30,6 +31,7 @@ class NetworkState:
     def register_device(self, payload: DeviceInfoRequest) -> None:
         existing = self._devices.get(payload.device_id)
         self._devices[payload.device_id] = DeviceRecord(
+            kind=payload.kind,
             events=tuple(payload.events),
             connected=existing.connected if existing is not None else False,
         )
@@ -58,6 +60,7 @@ class NetworkState:
         return {
             "devices": {
                 device_id: {
+                    "kind": record.kind,
                     "events": list(record.events),
                     "connected": record.connected,
                     "last_seen_at": record.last_seen_at.isoformat(),

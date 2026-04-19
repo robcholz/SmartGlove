@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapte
 from typing_extensions import Annotated
 
 DeviceId = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{12}$")]
+DeviceKind = Literal["glove", "machine"]
 Axis3 = tuple[float, float, float]
 JsonValue = dict[str, Any] | list[Any] | str | float | int | bool | None
 
@@ -20,6 +21,7 @@ class AckResponse(BaseModel):
 
 class DeviceInfoRequest(StrictModel):
     device_id: DeviceId
+    kind: DeviceKind
     events: list[str] = Field(default_factory=list)
 
 

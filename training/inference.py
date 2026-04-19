@@ -21,6 +21,7 @@ from training.gesture_model import (
     build_scaler_from_metadata,
     load_model_metadata,
     softmax,
+    transform_features,
 )
 from tests.collect_data import (
     SampleBuffer,
@@ -63,9 +64,6 @@ def build_frame(sample: SampleBuffer) -> np.ndarray:
             float(sample.values["acc_x"]),
             float(sample.values["acc_y"]),
             float(sample.values["acc_z"]),
-            float(sample.values["vec_x"]),
-            float(sample.values["vec_y"]),
-            float(sample.values["vec_z"]),
         ],
         dtype=np.float32,
     )
@@ -107,8 +105,7 @@ def main() -> None:
         session = None
         input_name = None
         model = GestureMLP(
-            sequence_length=metadata.sequence_length,
-            feature_count=len(metadata.feature_columns),
+            input_dim=metadata.model_input_dim,
             num_classes=len(metadata.labels),
             hidden_dims=metadata.hidden_dims,
         )
@@ -152,8 +149,7 @@ def main() -> None:
                 continue
 
             window_array = np.stack(window, axis=0).astype(np.float32)
-            normalized = scaler.transform(window_array).astype(np.float32)
-            batch = normalized[None, :, :]
+            batch = transform_features(window_array[None, :, :], scaler)
 
             if session is not None and input_name is not None:
                 logits = session.run(None, {input_name: batch})[0][0]

@@ -95,8 +95,7 @@ def main() -> None:
     test_features = transform_features(test_features, scaler)
 
     model = GestureMLP(
-        sequence_length=metadata.sequence_length,
-        feature_count=len(metadata.feature_columns),
+        input_dim=metadata.model_input_dim,
         num_classes=len(metadata.labels),
         hidden_dims=metadata.hidden_dims,
     )

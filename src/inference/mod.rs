@@ -8,8 +8,9 @@ use std::fmt::{Display, Formatter};
 
 pub use generated::{
     ESPDL_INPUT_EXPONENT, ESPDL_INPUT_SHAPE, ESPDL_OUTPUT_EXPONENT, ESPDL_OUTPUT_SHAPE,
-    ESPDL_TEST_INPUT, ESPDL_TEST_OUTPUT, FEATURE_MEANS, FEATURE_SCALES, MODEL_FEATURE_COUNT,
-    MODEL_LABELS, MODEL_OUTPUT_COUNT, MODEL_WINDOW_SIZE,
+    ESPDL_TEST_INPUT, ESPDL_TEST_OUTPUT, MODEL_FEATURE_MEANS, MODEL_FEATURE_SCALES,
+    MODEL_INPUT_FEATURE_COUNT, MODEL_LABELS, MODEL_OUTPUT_COUNT, MODEL_WINDOW_SIZE,
+    RAW_FEATURE_COUNT,
 };
 
 #[derive(Debug)]
@@ -31,8 +32,16 @@ impl Display for InferenceError {
 
 impl Error for InferenceError {}
 
-pub const MODEL_INPUT_LEN: usize = MODEL_WINDOW_SIZE * MODEL_FEATURE_COUNT;
-pub type SensorFrame = [f32; MODEL_FEATURE_COUNT];
+const IMU_START_INDEX: usize = 5;
+const IMU_FEATURE_COUNT: usize = RAW_FEATURE_COUNT - IMU_START_INDEX;
+const FULL_FEATURE_BLOCK_COUNT: usize = 9;
+const EXPECTED_MODEL_INPUT_LEN: usize =
+    (FULL_FEATURE_BLOCK_COUNT * RAW_FEATURE_COUNT) + (2 * IMU_FEATURE_COUNT);
+
+const _: [(); MODEL_INPUT_FEATURE_COUNT] = [(); EXPECTED_MODEL_INPUT_LEN];
+
+pub const MODEL_INPUT_LEN: usize = MODEL_INPUT_FEATURE_COUNT;
+pub type SensorFrame = [f32; RAW_FEATURE_COUNT];
 
 #[derive(Clone, Copy, Debug)]
 pub struct RankedPrediction {
@@ -69,7 +78,7 @@ pub struct SlidingWindow {
 impl SlidingWindow {
     pub fn new() -> Self {
         Self {
-            frames: [[0.0; MODEL_FEATURE_COUNT]; MODEL_WINDOW_SIZE],
+            frames: [[0.0; RAW_FEATURE_COUNT]; MODEL_WINDOW_SIZE],
             len: 0,
             next: 0,
         }
@@ -91,28 +100,101 @@ impl SlidingWindow {
         self.len == MODEL_WINDOW_SIZE
     }
 
-    pub fn flatten_if_full(&self) -> Option<[f32; MODEL_INPUT_LEN]> {
+    pub fn extract_features_if_full(&self) -> Option<[f32; MODEL_INPUT_LEN]> {
         if !self.is_full() {
             return None;
         }
 
-        let mut flattened = [0.0f32; MODEL_INPUT_LEN];
-        self.copy_into_flattened(&mut flattened);
+        let mut features = [0.0f32; MODEL_INPUT_LEN];
+        self.extract_features_into(&mut features);
 
-        Some(flattened)
+        Some(features)
     }
 
-    pub fn copy_into_flattened(&self, flattened: &mut [f32; MODEL_INPUT_LEN]) -> bool {
+    pub fn extract_features_into(&self, features: &mut [f32; MODEL_INPUT_LEN]) -> bool {
         if !self.is_full() {
             return false;
         }
 
+        let mut sums = [0.0f32; RAW_FEATURE_COUNT];
+        let mut sum_squares = [0.0f32; RAW_FEATURE_COUNT];
+        let mut mins = [f32::INFINITY; RAW_FEATURE_COUNT];
+        let mut maxes = [f32::NEG_INFINITY; RAW_FEATURE_COUNT];
+        let mut first = [0.0f32; RAW_FEATURE_COUNT];
+        let mut last = [0.0f32; RAW_FEATURE_COUNT];
+        let mut diff_square_sums = [0.0f32; RAW_FEATURE_COUNT];
+        let mut prev = [0.0f32; RAW_FEATURE_COUNT];
         let oldest = self.next;
+
         for window_index in 0..MODEL_WINDOW_SIZE {
             let frame = self.frames[(oldest + window_index) % MODEL_WINDOW_SIZE];
-            let base = window_index * MODEL_FEATURE_COUNT;
-            flattened[base..base + MODEL_FEATURE_COUNT].copy_from_slice(&frame);
+            if window_index == 0 {
+                first = frame;
+                prev = frame;
+            }
+            last = frame;
+
+            for feature_index in 0..RAW_FEATURE_COUNT {
+                let value = frame[feature_index];
+                sums[feature_index] += value;
+                sum_squares[feature_index] += value * value;
+                mins[feature_index] = mins[feature_index].min(value);
+                maxes[feature_index] = maxes[feature_index].max(value);
+
+                if window_index > 0 {
+                    let diff = value - prev[feature_index];
+                    diff_square_sums[feature_index] += diff * diff;
+                }
+            }
+
+            prev = frame;
         }
+
+        let sample_count = MODEL_WINDOW_SIZE as f32;
+        let mut means = [0.0f32; RAW_FEATURE_COUNT];
+        let mut stds = [0.0f32; RAW_FEATURE_COUNT];
+        let mut ranges = [0.0f32; RAW_FEATURE_COUNT];
+        let mut deltas = [0.0f32; RAW_FEATURE_COUNT];
+        let mut rms_diffs = [0.0f32; RAW_FEATURE_COUNT];
+        let mut imu_centered_rms = [0.0f32; IMU_FEATURE_COUNT];
+        let mut imu_diff_rms = [0.0f32; IMU_FEATURE_COUNT];
+
+        for feature_index in 0..RAW_FEATURE_COUNT {
+            let mean = sums[feature_index] / sample_count;
+            let variance = (sum_squares[feature_index] / sample_count) - (mean * mean);
+            means[feature_index] = mean;
+            stds[feature_index] = variance.max(0.0).sqrt();
+            ranges[feature_index] = maxes[feature_index] - mins[feature_index];
+            deltas[feature_index] = last[feature_index] - first[feature_index];
+            rms_diffs[feature_index] = (diff_square_sums[feature_index] / sample_count).sqrt();
+        }
+
+        for imu_index in 0..IMU_FEATURE_COUNT {
+            let feature_index = IMU_START_INDEX + imu_index;
+            let centered_variance =
+                (sum_squares[feature_index] / sample_count) - (means[feature_index] * means[feature_index]);
+            imu_centered_rms[imu_index] = centered_variance.max(0.0).sqrt();
+            imu_diff_rms[imu_index] = (diff_square_sums[feature_index] / sample_count).sqrt();
+        }
+
+        let mut offset = 0usize;
+        for block in [
+            &means,
+            &stds,
+            &mins,
+            &maxes,
+            &ranges,
+            &first,
+            &last,
+            &deltas,
+            &rms_diffs,
+        ] {
+            features[offset..offset + RAW_FEATURE_COUNT].copy_from_slice(block);
+            offset += RAW_FEATURE_COUNT;
+        }
+        features[offset..offset + IMU_FEATURE_COUNT].copy_from_slice(&imu_centered_rms);
+        offset += IMU_FEATURE_COUNT;
+        features[offset..offset + IMU_FEATURE_COUNT].copy_from_slice(&imu_diff_rms);
 
         true
     }
@@ -124,19 +206,18 @@ impl Default for SlidingWindow {
     }
 }
 
-pub fn normalize_flat_input(input: &[f32; MODEL_INPUT_LEN]) -> [f32; MODEL_INPUT_LEN] {
+pub fn normalize_feature_input(input: &[f32; MODEL_INPUT_LEN]) -> [f32; MODEL_INPUT_LEN] {
     let mut normalized = [0.0f32; MODEL_INPUT_LEN];
-    normalize_flat_input_into(input, &mut normalized);
+    normalize_feature_input_into(input, &mut normalized);
     normalized
 }
 
-pub fn normalize_flat_input_into(
+pub fn normalize_feature_input_into(
     input: &[f32; MODEL_INPUT_LEN],
     normalized: &mut [f32; MODEL_INPUT_LEN],
 ) {
     for (index, value) in input.iter().copied().enumerate() {
-        let feature_index = index % MODEL_FEATURE_COUNT;
-        normalized[index] = (value - FEATURE_MEANS[feature_index]) / FEATURE_SCALES[feature_index];
+        normalized[index] = (value - MODEL_FEATURE_MEANS[index]) / MODEL_FEATURE_SCALES[index];
     }
 }
 
@@ -268,10 +349,44 @@ pub fn run_normalized_input(
     Err(InferenceError::ComponentUnavailable)
 }
 
+#[cfg(esp_idf_comp_espdl_experiment_enabled)]
+pub fn run_quantized_input(
+    input: &[i8; MODEL_INPUT_LEN],
+    input_exponent: i32,
+) -> Result<InferenceResult, InferenceError> {
+    run_with_relaxed_task_wdt(|| {
+        use core::mem::MaybeUninit;
+
+        let mut raw =
+            MaybeUninit::<esp_idf_svc::sys::espdl_experiment::espdl_inference_result_t>::zeroed();
+        let err = unsafe {
+            esp_idf_svc::sys::espdl_experiment::espdl_experiment_run_quantized_input(
+                input.as_ptr(),
+                input.len(),
+                input_exponent,
+                raw.as_mut_ptr(),
+            )
+        };
+        let raw = unsafe { raw.assume_init() };
+        if err != 0 {
+            return Err(InferenceError::Esp(err));
+        }
+        map_ffi_result(&raw)
+    })
+}
+
+#[cfg(not(esp_idf_comp_espdl_experiment_enabled))]
+pub fn run_quantized_input(
+    _input: &[i8; MODEL_INPUT_LEN],
+    _input_exponent: i32,
+) -> Result<InferenceResult, InferenceError> {
+    Err(InferenceError::ComponentUnavailable)
+}
+
 pub fn run_raw_sensor_input(
     input: &[f32; MODEL_INPUT_LEN],
 ) -> Result<InferenceResult, InferenceError> {
-    let normalized = normalize_flat_input(input);
+    let normalized = normalize_feature_input(input);
     run_normalized_input(&normalized)
 }
 
@@ -279,14 +394,14 @@ pub fn run_raw_sensor_input_with_scratch(
     input: &[f32; MODEL_INPUT_LEN],
     normalized: &mut [f32; MODEL_INPUT_LEN],
 ) -> Result<InferenceResult, InferenceError> {
-    normalize_flat_input_into(input, normalized);
+    normalize_feature_input_into(input, normalized);
     run_normalized_input(normalized)
 }
 
 #[cfg(esp_idf_comp_espdl_experiment_enabled)]
 pub fn run_quantized_self_test() -> Result<SelfTestReport, InferenceError> {
     run_with_relaxed_task_wdt(|| {
-        let inference = run_normalized_input(&ESPDL_TEST_INPUT)?;
+        let inference = run_quantized_input(&ESPDL_TEST_INPUT, ESPDL_INPUT_EXPONENT)?;
         let exact_quantized_match = inference.quantized_output == ESPDL_TEST_OUTPUT;
         let scale = 2f32.powi(ESPDL_OUTPUT_EXPONENT);
         let mut max_dequantized_abs_error = 0.0f32;

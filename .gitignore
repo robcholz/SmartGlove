@@ -13,6 +13,7 @@ training/glove_model.pt
 training/glove_model.json
 training/glove_model.onnx
 training/glove_model.espdl
+training/benchmark.json
 
 processed_data/
 

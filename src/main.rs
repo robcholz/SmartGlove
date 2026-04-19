@@ -80,7 +80,7 @@ fn run_live_inference() {
         .expect("failed to init pinky sensor");
 
     let mut sliding_window = Box::new(SlidingWindow::new());
-    let mut flattened_window = Box::new([0.0f32; MODEL_INPUT_LEN]);
+    let mut feature_input = Box::new([0.0f32; MODEL_INPUT_LEN]);
     let mut normalized_window = Box::new([0.0f32; MODEL_INPUT_LEN]);
     let mut frame_counter = 0usize;
 
@@ -89,15 +89,6 @@ fn run_live_inference() {
             Ok(acc) => acc,
             Err(err) => {
                 log::error!("failed to read accelerometer: {:?}", err);
-                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
-                continue;
-            }
-        };
-
-        let vec = match imu.read_vec() {
-            Ok(vec) => vec,
-            Err(err) => {
-                log::error!("failed to read gyroscope vector: {:?}", err);
                 FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
                 continue;
             }
@@ -153,18 +144,15 @@ fn run_live_inference() {
             acc[0],
             acc[1],
             acc[2],
-            vec[0],
-            vec[1],
-            vec[2],
         ];
 
         sliding_window.push_frame(frame);
         frame_counter += 1;
 
         if sliding_window.is_full() && frame_counter % INFERENCE_INTERVAL_FRAMES == 0 {
-            if sliding_window.copy_into_flattened(flattened_window.as_mut()) {
+            if sliding_window.extract_features_into(feature_input.as_mut()) {
                 match run_raw_sensor_input_with_scratch(
-                    flattened_window.as_ref(),
+                    feature_input.as_ref(),
                     normalized_window.as_mut(),
                 ) {
                     Ok(result) => {

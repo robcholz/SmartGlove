@@ -25,7 +25,6 @@ from training.gesture_model import (
     evaluate_predictions,
     export_onnx,
     fit_feature_scaler,
-    load_model_metadata,
     load_processed_metadata,
     load_processed_split,
     load_quantized_examples,
@@ -112,13 +111,13 @@ def quantize_model(
         shuffle=False,
         collate_fn=lambda batch: torch.stack([item[0] for item in batch], dim=0).cpu(),
     )
-    sample_shape = calibration_features.shape[1:]
+    input_dim = calibration_features.shape[1]
     espdl_quantize_onnx(
         onnx_import_file=str(onnx_path),
         espdl_export_file=str(espdl_path),
         calib_dataloader=calibration_loader,
         calib_steps=min(calibration_steps, len(calibration_loader)),
-        input_shape=[1, sample_shape[0], sample_shape[1]],
+        input_shape=[1, input_dim],
         inputs=None,
         target=target,
         num_of_bits=bits,
@@ -151,8 +150,7 @@ def main() -> None:
     train_loader = make_loader(train_features, train_labels, args.batch_size, shuffle=True)
 
     model = GestureMLP(
-        sequence_length=processed_metadata.sequence_length,
-        feature_count=len(processed_metadata.feature_columns),
+        input_dim=train_features.shape[1],
         num_classes=len(processed_metadata.labels),
         hidden_dims=args.hidden_dims,
     )
@@ -193,7 +191,7 @@ def main() -> None:
     model.load_state_dict(best_state)
     artifacts = make_artifact_paths(args.artifacts_dir)
     torch.save(model.state_dict(), artifacts.weights)
-    export_onnx(model, train_features.shape[1:], artifacts.onnx)
+    export_onnx(model, train_features.shape[1], artifacts.onnx)
     onnx_max_abs_error = validate_onnx_export(model, artifacts.onnx, val_features)
 
     train_predictions = predict_logits(model, train_features).argmax(axis=1)
@@ -207,6 +205,7 @@ def main() -> None:
         processed_dir=str(args.processed_dir.resolve()),
         sequence_length=processed_metadata.sequence_length,
         feature_columns=processed_metadata.feature_columns,
+        model_input_dim=int(train_features.shape[1]),
         labels=processed_metadata.labels,
         scaler_mean=scaler.mean_.astype(float).tolist(),
         scaler_scale=scaler.scale_.astype(float).tolist(),

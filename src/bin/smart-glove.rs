@@ -16,8 +16,8 @@ use esp_idf_svc::hal::units::*;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use identity::DeviceId;
 use network::{
-    connect_status_reporter, send_device_info, DeviceKind, FlexReadings, SensorSample,
-    StatusReportConfig,
+    connect_status_reporter, send_device_info, send_mapping, DeviceKind, FlexReadings,
+    NetworkError, SensorSample, StatusReportConfig,
 };
 use provision::{
     BasicProvision, EspProvisionCapabilityProvider, Provision, ProvisionCapabilityProvider,
@@ -34,6 +34,35 @@ const DEVICE_KIND: DeviceKind = DeviceKind::Glove;
 const ADVERTISING_WINDOW: Duration = Duration::from_secs(10);
 const EVENT_PREFIX: &str = "event.infer.";
 const EVENT_PAYLOAD_JSON: &str = "null";
+const SMART_MACHINE_LED_DEVICE_ID: &str = "e072a1a9d114";
+const SMART_MACHINE_MOTOR_DEVICE_ID: &str = "9070693529c4";
+const DEFAULT_MACHINE_MAPPINGS: [(&str, &str, &str); 5] = [
+    (
+        "event.infer.waving",
+        SMART_MACHINE_LED_DEVICE_ID,
+        "hw.rgb_green",
+    ),
+    (
+        "event.infer.thumb-up",
+        SMART_MACHINE_LED_DEVICE_ID,
+        "hw.rgb_red",
+    ),
+    (
+        "event.infer.none",
+        SMART_MACHINE_LED_DEVICE_ID,
+        "hw.rgb_off",
+    ),
+    (
+        "event.infer.thumb-up",
+        SMART_MACHINE_MOTOR_DEVICE_ID,
+        "hw.motor_on",
+    ),
+    (
+        "event.infer.none",
+        SMART_MACHINE_MOTOR_DEVICE_ID,
+        "hw.motor_off",
+    ),
+];
 
 fn main() {
     esp_idf_svc::sys::link_patches();
@@ -177,12 +206,40 @@ fn run_live_inference(config: RuntimeConfig) -> Result<(), Box<dyn std::error::E
     let event_names = MODEL_LABELS
         .iter()
         .copied()
-        .filter(|label| *label != "none")
         .map(|label| format!("{EVENT_PREFIX}{label}"))
         .collect::<Vec<_>>();
     let events = event_names.iter().map(String::as_str).collect::<Vec<_>>();
     let status = send_device_info(&config.device_info_url, &device_id, DEVICE_KIND, &events)?;
     log::debug!("sent device info to server with http status {}", status);
+
+    for (source_event, target_machine_id, target_event) in DEFAULT_MACHINE_MAPPINGS {
+        match send_mapping(
+            &config.device_info_url,
+            &device_id,
+            source_event,
+            target_machine_id,
+            target_event,
+        ) {
+            Ok(status) => {
+                log::info!(
+                    "registered mapping source_event={} target_machine_id={} target_event={} with http status {}",
+                    source_event,
+                    target_machine_id,
+                    target_event,
+                    status
+                );
+            }
+            Err(NetworkError::HttpStatus(409)) => {
+                log::warn!(
+                    "mapping already exists source_event={} target_machine_id={} target_event={}",
+                    source_event,
+                    target_machine_id,
+                    target_event
+                );
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
 
     let status_config = StatusReportConfig {
         websocket_url: &config.status_ws_url,
@@ -306,7 +363,7 @@ fn run_live_inference(config: RuntimeConfig) -> Result<(), Box<dyn std::error::E
                             FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
                             continue;
                         }
-                        log::debug!(
+                        log::info!(
                             "gesture classification: label={} top3=[{}:{:.3}, {}:{:.3}, {}:{:.3}]",
                             result.predicted_label,
                             top3[0].label,
@@ -316,19 +373,21 @@ fn run_live_inference(config: RuntimeConfig) -> Result<(), Box<dyn std::error::E
                             top3[2].label,
                             top3[2].score,
                         );
-                        if result.predicted_label != "none" {
-                            let event_name = format!("{EVENT_PREFIX}{}", result.predicted_label);
-                            match reporter.send_event(&event_name, EVENT_PAYLOAD_JSON) {
-                                Ok(()) => {
-                                    log::debug!("sent inference event {}", event_name);
-                                }
-                                Err(err) => {
-                                    log::error!(
-                                        "failed to send inference event {}: {}",
-                                        event_name,
-                                        err
-                                    );
-                                }
+                        let event_name = if result.predicted_label == "tiny-movement" {
+                            format!("{EVENT_PREFIX}none")
+                        } else {
+                            format!("{EVENT_PREFIX}{}", result.predicted_label)
+                        };
+                        match reporter.send_event(&event_name, EVENT_PAYLOAD_JSON) {
+                            Ok(()) => {
+                                log::debug!("sent inference event {}", event_name);
+                            }
+                            Err(err) => {
+                                log::error!(
+                                    "failed to send inference event {}: {}",
+                                    event_name,
+                                    err
+                                );
                             }
                         }
                     }

@@ -7,7 +7,13 @@ resolver = "2"
 rust-version = "1.82"
 
 [workspace]
-members = ["src/provision", "src/drivers", "src/identity", "src/network"]
+members = [
+    "src/provision",
+    "src/drivers",
+    "src/identity",
+    "src/network",
+    "src/remote-control",
+]
 
 [[bin]]
 name = "smart-glove"
@@ -15,8 +21,13 @@ path = "src/bin/smart-glove.rs"
 harness = false # do not use the built-in cargo test harness -> resolve rust-analyzer errors
 
 [[bin]]
-name = "smart-machine"
-path = "src/bin/smart-machine.rs"
+name = "smart-machine-led"
+path = "src/bin/smart-machine-led.rs"
+harness = false
+
+[[bin]]
+name = "smart-machine-motor"
+path = "src/bin/smart-machine-motor.rs"
 harness = false
 
 [[bin]]
@@ -53,12 +64,14 @@ esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc.git" }
 [dependencies]
 log = "0.4"
 esp-idf-svc = { version = "0.52.1", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
+ws2812-esp32-rmt-driver = { git = "https://github.com/cat-in-136/ws2812-esp32-rmt-driver", rev = "0c8385778019d130fb907900828bd48f3aea86d8", features = ["smart-leds-trait"] }
 # Remove `generic-queue-8` if you plan to use `embassy-time` WITH `embassy-executor`
 embassy-time = { version = "0.5", features = ["generic-queue-8"] }
 identity = { path = "src/identity" }
 provision = { path = "src/provision" }
 drivers = { path = "src/drivers" }
 network = { path = "src/network" }
+remote-control = { path = "src/remote-control" }
 
 [[package.metadata.esp-idf-sys.extra_components]]
 component_dirs = ["src/inference/components"]

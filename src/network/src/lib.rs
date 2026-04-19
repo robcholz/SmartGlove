@@ -1,7 +1,7 @@
 pub mod protocol;
 pub mod status_stream;
 
-pub use protocol::{send_device_info, DeviceInfo, DeviceKind};
+pub use protocol::{send_device_info, send_mapping, DeviceInfo, DeviceKind};
 pub use status_stream::{
     connect_status_reporter, mock_sensor_sample, FlexReadings, SensorSample, StatusReportConfig,
     StatusReporter,

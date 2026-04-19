@@ -1,8 +1,15 @@
-use esp_idf_svc::http::{client::EspHttpConnection, Method};
+use std::time::Duration;
+
+use esp_idf_svc::http::{
+    client::{Configuration as HttpConfiguration, EspHttpConnection},
+    Method,
+};
 use identity::DeviceIdentity;
 use serde::Serialize;
 
 use crate::NetworkError;
+
+const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -23,6 +30,13 @@ struct DeviceInfoPayload<'a> {
     device_id: &'a str,
     kind: DeviceKind,
     events: &'a [&'a str],
+}
+
+#[derive(Serialize)]
+struct CreateGloveMappingPayload<'a> {
+    source_event: &'a str,
+    target_machine_id: &'a str,
+    target_event: &'a str,
 }
 
 #[derive(Serialize)]
@@ -76,7 +90,11 @@ pub fn send_device_info(
         ("Content-Length", content_length.as_str()),
     ];
 
-    let mut connection = EspHttpConnection::new(&Default::default()).map_err(NetworkError::Http)?;
+    let http_config = HttpConfiguration {
+        timeout: Some(HTTP_TIMEOUT),
+        ..Default::default()
+    };
+    let mut connection = EspHttpConnection::new(&http_config).map_err(NetworkError::Http)?;
 
     connection
         .initiate_request(Method::Post, endpoint, &headers)
@@ -93,6 +111,67 @@ pub fn send_device_info(
     }
 
     Ok(status)
+}
+
+pub fn send_mapping(
+    device_info_endpoint: &str,
+    glove_device_id: &str,
+    source_event: &str,
+    target_machine_id: &str,
+    target_event: &str,
+) -> Result<u16, NetworkError> {
+    if device_info_endpoint.is_empty() {
+        return Err(NetworkError::InvalidConfig(
+            "device info endpoint must not be empty",
+        ));
+    }
+
+    let endpoint = build_glove_mapping_endpoint(device_info_endpoint, glove_device_id)?;
+    let body = serde_json::to_string(&CreateGloveMappingPayload {
+        source_event,
+        target_machine_id,
+        target_event,
+    })?;
+    let content_length = body.len().to_string();
+    let headers = [
+        ("Content-Type", "application/json"),
+        ("Content-Length", content_length.as_str()),
+    ];
+
+    let http_config = HttpConfiguration {
+        timeout: Some(HTTP_TIMEOUT),
+        ..Default::default()
+    };
+    let mut connection = EspHttpConnection::new(&http_config).map_err(NetworkError::Http)?;
+
+    connection
+        .initiate_request(Method::Post, &endpoint, &headers)
+        .map_err(NetworkError::Http)?;
+    connection
+        .write_all(body.as_bytes())
+        .map_err(NetworkError::Http)?;
+    connection.initiate_response().map_err(NetworkError::Http)?;
+
+    let status = connection.status();
+
+    if !(200..300).contains(&status) {
+        return Err(NetworkError::HttpStatus(status));
+    }
+
+    Ok(status)
+}
+
+fn build_glove_mapping_endpoint(
+    device_info_endpoint: &str,
+    glove_device_id: &str,
+) -> Result<String, NetworkError> {
+    let Some(prefix) = device_info_endpoint.strip_suffix("/v1/device-info") else {
+        return Err(NetworkError::InvalidConfig(
+            "device info endpoint must end with /v1/device-info",
+        ));
+    };
+
+    Ok(format!("{prefix}/v1/gloves/{glove_device_id}/mappings"))
 }
 
 pub fn build_online_json(device_id: &str) -> String {

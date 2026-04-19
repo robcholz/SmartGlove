@@ -1315,6 +1315,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
+name = "remote-control"
+version = "0.1.0"
+dependencies = [
+ "esp-idf-svc",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "remove_dir_all"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1327,6 +1337,12 @@ dependencies = [
  "normpath",
  "windows-sys 0.59.0",
 ]
+
+[[package]]
+name = "rgb"
+version = "0.8.53"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
 
 [[package]]
 name = "rustc-hash"
@@ -1467,6 +1483,17 @@ dependencies = [
  "log",
  "network",
  "provision",
+ "remote-control",
+ "ws2812-esp32-rmt-driver",
+]
+
+[[package]]
+name = "smart-leds-trait"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7f4441a131924d58da6b83a7ad765c460e64630cce504376c3a87a2558c487f"
+dependencies = [
+ "rgb",
 ]
 
 [[package]]
@@ -2091,6 +2118,19 @@ dependencies = [
  "serde_json",
  "unicode-xid",
  "wasmparser",
+]
+
+[[package]]
+name = "ws2812-esp32-rmt-driver"
+version = "0.14.0"
+source = "git+https://github.com/cat-in-136/ws2812-esp32-rmt-driver?rev=0c8385778019d130fb907900828bd48f3aea86d8#0c8385778019d130fb907900828bd48f3aea86d8"
+dependencies = [
+ "embuild",
+ "esp-idf-hal",
+ "esp-idf-sys",
+ "heapless 0.8.0",
+ "paste",
+ "smart-leds-trait",
 ]
 
 [[package]]

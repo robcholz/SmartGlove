@@ -25,6 +25,24 @@ class DeviceInfoRequest(StrictModel):
     events: list[str] = Field(default_factory=list)
 
 
+class CreateGloveMappingRequest(StrictModel):
+    source_event: str
+    target_machine_id: DeviceId
+    target_event: str
+
+
+class GloveMapping(StrictModel):
+    id: str
+    source_device_id: DeviceId
+    source_event: str
+    target_machine_id: DeviceId
+    target_event: str
+
+
+class GloveMappingListResponse(StrictModel):
+    items: list[GloveMapping]
+
+
 class FlexReadings(StrictModel):
     thumb: float
     index: float
@@ -59,9 +77,38 @@ class SensorBatchFrame(StrictModel):
     samples: list[BufferedSensorSample]
 
 
+class MachineOnlineFrame(StrictModel):
+    kind: Literal["machine.online"]
+    device_id: DeviceId
+
+
+class MachineResultFrame(StrictModel):
+    kind: Literal["machine.result"]
+    device_id: DeviceId
+    request_id: str
+    status: Literal["ok", "error"]
+    payload: JsonValue
+
+
+class MachineTriggerFrame(StrictModel):
+    kind: Literal["machine.trigger"]
+    request_id: str
+    device_id: DeviceId
+    event: str
+    source_device_id: DeviceId
+    source_event: str
+    payload: JsonValue
+
+
 StatusFrame = Annotated[
     DeviceOnlineFrame | DeviceEventFrame | SensorBatchFrame,
     Field(discriminator="kind"),
 ]
 
+MachineControlFrame = Annotated[
+    MachineOnlineFrame | MachineResultFrame,
+    Field(discriminator="kind"),
+]
+
 status_frame_adapter = TypeAdapter(StatusFrame)
+machine_control_frame_adapter = TypeAdapter(MachineControlFrame)

@@ -17,6 +17,8 @@ servers:
 tags:
   - name: Device Info
   - name: Status Stream
+  - name: Machine Control
+  - name: Glove Mappings
 
 paths:
   /v1/device-info:
@@ -26,7 +28,9 @@ paths:
       summary: Publish device metadata
       description: >
         Called by the device to advertise its `device_id`, `kind`, and the list of event names it
-        may emit.
+        supports. For `glove` devices, `events` are source events the glove may emit on the status
+        stream. For `machine` devices, `events` are control events the machine accepts from the
+        server over the machine control stream.
         The current client accepts any `2xx` status and ignores the response body.
       operationId: sendDeviceInfo
       requestBody:
@@ -61,6 +65,77 @@ paths:
           description: Invalid payload
         '409':
           description: Conflicting device registration state
+
+  /v1/gloves/{glove_device_id}/mappings:
+    get:
+      tags:
+        - Glove Mappings
+      summary: List machine mappings for a glove
+      description: >
+        Returns all remote-control mappings owned by the specified glove. Each mapping links one
+        glove-emitted event to one machine control event.
+      operationId: listGloveMappings
+      parameters:
+        - $ref: '#/components/parameters/GloveDeviceIdPath'
+      responses:
+        '200':
+          description: Mappings for the glove
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GloveMappingListResponse'
+    post:
+      tags:
+        - Glove Mappings
+      summary: Create a machine mapping for a glove
+      description: >
+        Registers one mapping from a glove source event to a machine target event. The server
+        should validate that the source device exists with `kind=glove`, the target device exists
+        with `kind=machine`, and both referenced events were declared in each device's
+        `/v1/device-info` payload.
+      operationId: createGloveMapping
+      parameters:
+        - $ref: '#/components/parameters/GloveDeviceIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGloveMappingRequest'
+            examples:
+              default:
+                value:
+                  source_event: event.infer.wave
+                  target_machine_id: feedfacecafe
+                  target_event: machine.led.on
+      responses:
+        '201':
+          description: Mapping created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GloveMapping'
+        '400':
+          description: Invalid payload
+        '404':
+          description: Glove or machine not found
+        '409':
+          description: Duplicate or conflicting mapping
+
+  /v1/gloves/{glove_device_id}/mappings/{mapping_id}:
+    delete:
+      tags:
+        - Glove Mappings
+      summary: Delete a machine mapping for a glove
+      operationId: deleteGloveMapping
+      parameters:
+        - $ref: '#/components/parameters/GloveDeviceIdPath'
+        - $ref: '#/components/parameters/MappingIdPath'
+      responses:
+        '204':
+          description: Mapping deleted
+        '404':
+          description: Mapping not found
 
   /v1/ws:
     get:
@@ -125,7 +200,80 @@ paths:
                     ring: 0.39266
                     pinky: 0.31602
 
+  /v1/machine-ws:
+    get:
+      tags:
+        - Machine Control
+      summary: Upgrade to the machine control WebSocket
+      description: >
+        HTTP upgrade endpoint used by machine devices for real-time remote control. The machine
+        actively connects to this endpoint after provisioning and sending `/v1/device-info`.
+        Client-to-server traffic is used for online presence and optional execution results.
+        Server-to-client traffic delivers control triggers derived from glove events and glove
+        mapping rules.
+      operationId: openMachineControlWebSocket
+      responses:
+        '101':
+          description: Switching Protocols
+        '400':
+          description: Invalid upgrade request
+        '401':
+          description: Authentication required
+        '403':
+          description: Device not allowed to open the stream
+      x-websocket-messages:
+        direction: bidirectional
+        contentType: application/json
+        client_to_server:
+          oneOf:
+            - $ref: '#/components/schemas/MachineOnlineFrame'
+            - $ref: '#/components/schemas/MachineResultFrame'
+          examples:
+            online:
+              value:
+                kind: machine.online
+                device_id: feedfacecafe
+            result:
+              value:
+                kind: machine.result
+                device_id: feedfacecafe
+                request_id: req_123
+                status: ok
+                payload: null
+        server_to_client:
+          oneOf:
+            - $ref: '#/components/schemas/MachineTriggerFrame'
+          examples:
+            trigger:
+              value:
+                kind: machine.trigger
+                request_id: req_123
+                device_id: feedfacecafe
+                event: machine.led.on
+                source_device_id: aca704299de8
+                source_event: event.infer.wave
+                payload: null
+
 components:
+  parameters:
+    GloveDeviceIdPath:
+      name: glove_device_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{12}$'
+      description: Device identifier for a registered glove.
+
+    MappingIdPath:
+      name: mapping_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      description: Server-assigned mapping identifier.
+
   schemas:
     AckResponse:
       type: object
@@ -152,7 +300,10 @@ components:
             - machine
         events:
           type: array
-          description: Event names this device may emit over the WebSocket stream.
+          description: >
+            Event names declared by this device. For `glove`, these are source events the glove
+            may emit over `/v1/ws`. For `machine`, these are control events the machine accepts
+            over `/v1/machine-ws`.
           items:
             type: string
           minItems: 0
@@ -174,6 +325,126 @@ components:
       required:
         - kind
         - device_id
+
+    MachineOnlineFrame:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          const: machine.online
+        device_id:
+          type: string
+          pattern: '^[0-9a-f]{12}$'
+      required:
+        - kind
+        - device_id
+
+    MachineResultFrame:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          const: machine.result
+        device_id:
+          type: string
+          pattern: '^[0-9a-f]{12}$'
+        request_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - ok
+            - error
+        payload:
+          $ref: '#/components/schemas/JsonValue'
+      required:
+        - kind
+        - device_id
+        - request_id
+        - status
+        - payload
+
+    MachineTriggerFrame:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          const: machine.trigger
+        request_id:
+          type: string
+        device_id:
+          type: string
+          pattern: '^[0-9a-f]{12}$'
+        event:
+          type: string
+        source_device_id:
+          type: string
+          pattern: '^[0-9a-f]{12}$'
+        source_event:
+          type: string
+        payload:
+          $ref: '#/components/schemas/JsonValue'
+      required:
+        - kind
+        - request_id
+        - device_id
+        - event
+        - source_device_id
+        - source_event
+        - payload
+
+    CreateGloveMappingRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        source_event:
+          type: string
+        target_machine_id:
+          type: string
+          pattern: '^[0-9a-f]{12}$'
+        target_event:
+          type: string
+      required:
+        - source_event
+        - target_machine_id
+        - target_event
+
+    GloveMapping:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        source_device_id:
+          type: string
+          pattern: '^[0-9a-f]{12}$'
+        source_event:
+          type: string
+        target_machine_id:
+          type: string
+          pattern: '^[0-9a-f]{12}$'
+        target_event:
+          type: string
+      required:
+        - id
+        - source_device_id
+        - source_event
+        - target_machine_id
+        - target_event
+
+    GloveMappingListResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GloveMapping'
+      required:
+        - items
 
     DeviceEventFrame:
       type: object

@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 server = "server.__main__:main"
+provision-app = "server.provision_app:main"
 network-e2e = "tests.network_e2e:main"
 provision-e2e = "tests.provision_e2e:main"
 provision-serial = "tests.serial_capture:main"

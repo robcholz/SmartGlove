@@ -34,19 +34,25 @@ class NetworkState:
             connected=existing.connected if existing is not None else False,
         )
 
-    def record_frame(self, frame: StoredFrame) -> None:
+    def record_frame(self, frame: StoredFrame) -> bool:
         record = self._devices.setdefault(frame.device_id, DeviceRecord())
         record.last_seen_at = datetime.now(UTC)
+        became_connected = False
         if isinstance(frame, DeviceOnlineFrame):
+            became_connected = not record.connected
             record.connected = True
 
         self._recent_frames.append(frame.model_dump(mode="json"))
+        return became_connected
 
-    def mark_disconnected(self, device_id: str) -> None:
+    def mark_disconnected(self, device_id: str) -> bool:
         record = self._devices.get(device_id)
         if record is not None:
+            was_connected = record.connected
             record.connected = False
             record.last_seen_at = datetime.now(UTC)
+            return was_connected
+        return False
 
     def snapshot(self) -> dict[str, Any]:
         return {

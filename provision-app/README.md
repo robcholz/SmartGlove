@@ -5,13 +5,19 @@ Static Web Bluetooth app for provisioning SmartGlove devices.
 Run it from localhost:
 
 ```bash
-python3 -m http.server 4173 --directory provision-app
+uv run provision-app
 ```
 
 Then open:
 
 ```text
 http://localhost:4173
+```
+
+Optional flags:
+
+```bash
+uv run provision-app --host 0.0.0.0 --port 8080
 ```
 
 Notes:

@@ -103,7 +103,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     return
 
                 current_device_id = frame.device_id
-                state.record_frame(frame)
+                if state.record_frame(frame):
+                    logger.info("device %s is online", frame.device_id)
                 logger.info(
                     "received frame kind=%s device_id=%s",
                     frame.kind,
@@ -112,8 +113,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except WebSocketDisconnect:
             return
         finally:
-            if current_device_id is not None:
-                state.mark_disconnected(current_device_id)
+            if current_device_id is not None and state.mark_disconnected(
+                current_device_id
+            ):
+                logger.info("device %s is offline", current_device_id)
 
     return app
 

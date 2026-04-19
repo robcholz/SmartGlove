@@ -94,6 +94,19 @@ class ServerAppTest(unittest.TestCase):
         self.assertEqual(len(snapshot["recent_frames"]), 3)
         self.assertFalse(snapshot["devices"]["aca704299de8"]["connected"])
 
+    def test_network_state_marks_online_transition_once(self) -> None:
+        self.client.post(
+            "/v1/device-info",
+            json={"device_id": "aca704299de8", "events": ["battery.low"]},
+        )
+
+        with self.client.websocket_connect("/v1/ws") as websocket:
+            websocket.send_json({"kind": "device.online", "device_id": "aca704299de8"})
+            websocket.send_json({"kind": "device.online", "device_id": "aca704299de8"})
+
+        snapshot = self.app.state.network_state.snapshot()
+        self.assertFalse(snapshot["devices"]["aca704299de8"]["connected"])
+
     def test_websocket_rejects_invalid_frame(self) -> None:
         with self.assertRaises(WebSocketDisconnect) as context:
             with self.client.websocket_connect("/v1/ws") as websocket:

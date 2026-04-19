@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import logging
 
 import uvicorn
 
 from server.app import create_app
 from server.config import Settings
+from server.observability import configure_logging
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,16 +30,14 @@ def main() -> None:
         reload=True if args.reload else None,
         log_level=args.log_level,
     )
-    logging.basicConfig(
-        level=getattr(logging, settings.log_level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+    configure_logging(settings.log_level)
 
     uvicorn.run(
         create_app(settings),
         host=settings.host,
         port=settings.port,
         log_level=settings.log_level,
+        log_config=None,
         reload=settings.reload,
     )
 

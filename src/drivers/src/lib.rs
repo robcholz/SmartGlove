@@ -65,12 +65,12 @@ where
 
     fn read_acc(&mut self) -> Result<Axis3, Self::Error> {
         let acc = self.inner.get_acc()?;
-        Ok([acc.x, acc.y, acc.z])
+        Ok([-acc.x, -acc.y, -acc.z]) // calibrated by the phy placement
     }
 
     fn read_vec(&mut self) -> Result<Axis3, Self::Error> {
         let gyro = self.inner.get_gyro()?;
-        Ok([gyro.x, gyro.y, gyro.z])
+        Ok([-gyro.x, -gyro.y, -gyro.z]) // calibrated by the phy placement
     }
 }
 

@@ -171,23 +171,15 @@ impl SlidingWindow {
 
         for imu_index in 0..IMU_FEATURE_COUNT {
             let feature_index = IMU_START_INDEX + imu_index;
-            let centered_variance =
-                (sum_squares[feature_index] / sample_count) - (means[feature_index] * means[feature_index]);
+            let centered_variance = (sum_squares[feature_index] / sample_count)
+                - (means[feature_index] * means[feature_index]);
             imu_centered_rms[imu_index] = centered_variance.max(0.0).sqrt();
             imu_diff_rms[imu_index] = (diff_square_sums[feature_index] / sample_count).sqrt();
         }
 
         let mut offset = 0usize;
         for block in [
-            &means,
-            &stds,
-            &mins,
-            &maxes,
-            &ranges,
-            &first,
-            &last,
-            &deltas,
-            &rms_diffs,
+            &means, &stds, &mins, &maxes, &ranges, &first, &last, &deltas, &rms_diffs,
         ] {
             features[offset..offset + RAW_FEATURE_COUNT].copy_from_slice(block);
             offset += RAW_FEATURE_COUNT;

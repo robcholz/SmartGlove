@@ -117,7 +117,9 @@ def main() -> None:
             f"features_shape={feature_array.shape}"
         )
 
-    original_lengths = np.asarray([record.original_length for record in manifest_records], dtype=np.int64)
+    original_lengths = np.asarray(
+        [record.original_length for record in manifest_records], dtype=np.int64
+    )
     label_counts = Counter(record.label for record in manifest_records)
     metadata = ProcessedDataMetadata(
         dataset_dir=str(args.dataset_dir.resolve()),

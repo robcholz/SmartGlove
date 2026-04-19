@@ -191,6 +191,13 @@ static esp_err_t copy_outputs(espdl_inference_result_t *out_result, dl::Model &m
     const uint32_t bounded_output_size =
         std::min<uint32_t>(logical_output_size, ESPDL_EXPERIMENT_MAX_OUTPUT_VALUES);
 
+    if (bounded_output_size == 0) {
+        std::snprintf(out_result->message,
+                      sizeof(out_result->message),
+                      "ESP-DL model produced an empty output tensor");
+        return ESP_FAIL;
+    }
+
     std::fill(std::begin(out_result->quantized_output), std::end(out_result->quantized_output), 0);
     std::fill(std::begin(out_result->dequantized_output), std::end(out_result->dequantized_output), 0.0f);
 

@@ -37,7 +37,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run live gesture inference on this computer using glove serial data."
     )
-    parser.add_argument("--metadata", type=Path, default=TRAINING_DIR / "glove_model_metadata.json")
+    parser.add_argument(
+        "--metadata", type=Path, default=TRAINING_DIR / "glove_model_metadata.json"
+    )
     parser.add_argument("--weights", type=Path, default=TRAINING_DIR / "glove_model.pt")
     parser.add_argument("--onnx", type=Path, default=TRAINING_DIR / "glove_model.onnx")
     parser.add_argument("--model-type", choices=["onnx", "torch"], default="onnx")
@@ -71,7 +73,9 @@ def build_frame(sample: SampleBuffer) -> np.ndarray:
 
 def format_topk(probabilities: np.ndarray, labels: list[str], top_k: int) -> str:
     top_indices = np.argsort(probabilities)[::-1][:top_k]
-    return ", ".join(f"{labels[index]}:{probabilities[index]:.3f}" for index in top_indices)
+    return ", ".join(
+        f"{labels[index]}:{probabilities[index]:.3f}" for index in top_indices
+    )
 
 
 def main() -> None:
@@ -98,7 +102,9 @@ def main() -> None:
         )
 
     if args.model_type == "onnx":
-        session = ort.InferenceSession(str(args.onnx), providers=["CPUExecutionProvider"])
+        session = ort.InferenceSession(
+            str(args.onnx), providers=["CPUExecutionProvider"]
+        )
         input_name = session.get_inputs()[0].name
         model = None
     else:
@@ -125,7 +131,10 @@ def main() -> None:
     )
     try:
         while True:
-            if args.max_seconds is not None and (time.monotonic() - start_time) >= args.max_seconds:
+            if (
+                args.max_seconds is not None
+                and (time.monotonic() - start_time) >= args.max_seconds
+            ):
                 break
 
             raw_line = serial_port.readline()

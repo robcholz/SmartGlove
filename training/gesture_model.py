@@ -13,7 +13,13 @@ import onnx
 import onnxruntime as ort
 import pandas as pd
 import torch
-from sklearn.metrics import accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+)
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch import nn
@@ -38,7 +44,9 @@ FEATURE_COLUMNS = [
     "acc_y",
     "acc_z",
 ]
-IMU_FEATURE_INDICES = [FEATURE_COLUMNS.index(name) for name in ["acc_x", "acc_y", "acc_z"]]
+IMU_FEATURE_INDICES = [
+    FEATURE_COLUMNS.index(name) for name in ["acc_x", "acc_y", "acc_z"]
+]
 LABEL_COLUMN = "label"
 DEFAULT_SEQUENCE_LENGTH = 230
 DEFAULT_SEED = 7
@@ -296,8 +304,12 @@ def load_model_metadata(metadata_path: Path) -> ModelMetadata:
     return ModelMetadata(**read_json(metadata_path))
 
 
-def load_processed_split(processed_dir: Path, split: str) -> tuple[np.ndarray, np.ndarray]:
-    features = load_array(processed_feature_path(processed_dir, split), dtype=np.float32)
+def load_processed_split(
+    processed_dir: Path, split: str
+) -> tuple[np.ndarray, np.ndarray]:
+    features = load_array(
+        processed_feature_path(processed_dir, split), dtype=np.float32
+    )
     labels = load_array(processed_label_path(processed_dir, split), dtype=np.int64)
     return features, labels
 
@@ -389,7 +401,9 @@ def write_model_metadata(metadata: ModelMetadata, output_path: Path) -> None:
     write_json(output_path, asdict(metadata))
 
 
-def write_processed_metadata(metadata: ProcessedDataMetadata, output_path: Path) -> None:
+def write_processed_metadata(
+    metadata: ProcessedDataMetadata, output_path: Path
+) -> None:
     write_json(output_path, asdict(metadata))
 
 
@@ -408,16 +422,26 @@ def softmax(logits: np.ndarray) -> np.ndarray:
     return exp / np.sum(exp, axis=-1, keepdims=True)
 
 
-def evaluate_predictions(labels: np.ndarray, predictions: np.ndarray) -> dict[str, float]:
+def evaluate_predictions(
+    labels: np.ndarray, predictions: np.ndarray
+) -> dict[str, float]:
     return {
         "accuracy": float(accuracy_score(labels, predictions)),
-        "macro_precision": float(precision_score(labels, predictions, average="macro", zero_division=0)),
-        "macro_recall": float(recall_score(labels, predictions, average="macro", zero_division=0)),
-        "macro_f1": float(f1_score(labels, predictions, average="macro", zero_division=0)),
+        "macro_precision": float(
+            precision_score(labels, predictions, average="macro", zero_division=0)
+        ),
+        "macro_recall": float(
+            recall_score(labels, predictions, average="macro", zero_division=0)
+        ),
+        "macro_f1": float(
+            f1_score(labels, predictions, average="macro", zero_division=0)
+        ),
     }
 
 
-def per_class_accuracy(labels: np.ndarray, predictions: np.ndarray, class_names: Sequence[str]) -> dict[str, float]:
+def per_class_accuracy(
+    labels: np.ndarray, predictions: np.ndarray, class_names: Sequence[str]
+) -> dict[str, float]:
     results: dict[str, float] = {}
     for index, class_name in enumerate(class_names):
         mask = labels == index
@@ -469,11 +493,18 @@ pub const MODEL_FEATURE_SCALES: [f32; {len(metadata.scaler_scale)}] = [{scales}]
     if quantized_examples is not None:
         if quantized_examples.input_tensor.dtype.startswith("float"):
             input_rust_type = "f32"
-            input_values = ", ".join(f"{float(value):.8f}" for value in quantized_examples.input_tensor.values)
+            input_values = ", ".join(
+                f"{float(value):.8f}"
+                for value in quantized_examples.input_tensor.values
+            )
         else:
             input_rust_type = "i8"
-            input_values = ", ".join(str(int(value)) for value in quantized_examples.input_tensor.values)
-        output_values = ", ".join(str(int(value)) for value in quantized_examples.output_tensor.values)
+            input_values = ", ".join(
+                str(int(value)) for value in quantized_examples.input_tensor.values
+            )
+        output_values = ", ".join(
+            str(int(value)) for value in quantized_examples.output_tensor.values
+        )
         output += f"""
 
 pub const ESPDL_TEST_INPUT: [{input_rust_type}; {len(quantized_examples.input_tensor.values)}] = [{input_values}];
@@ -489,7 +520,9 @@ pub const ESPDL_TEST_OUTPUT: [i8; 0] = [];
     output_path.write_text(output, encoding="utf-8")
 
 
-def parse_quantized_tensor_example(info_text: str, section_header: str, info_path: Path) -> QuantizedTensorExample:
+def parse_quantized_tensor_example(
+    info_text: str, section_header: str, info_path: Path
+) -> QuantizedTensorExample:
     pattern = re.compile(
         rf"{section_header}:\s*%(?P<name>[\w/\.]+), shape: \[(?P<shape>[^\]]+)\], "
         rf"exponents: \[(?P<exponent>-?\d+)\],\s*value: array\(\[(?P<values>.*?)\],\s*dtype=(?P<dtype>\w+)\)",
@@ -499,11 +532,15 @@ def parse_quantized_tensor_example(info_text: str, section_header: str, info_pat
     if match is None:
         raise ValueError(f"Could not parse {section_header} from {info_path}")
 
-    shape = [int(part.strip()) for part in match.group("shape").split(",") if part.strip()]
+    shape = [
+        int(part.strip()) for part in match.group("shape").split(",") if part.strip()
+    ]
     logical_size = math.prod(shape)
     dtype = match.group("dtype")
     value_dtype = np.float64 if dtype.startswith("float") else np.int64
-    values = np.fromstring(match.group("values").replace("\n", " "), sep=",", dtype=value_dtype)
+    values = np.fromstring(
+        match.group("values").replace("\n", " "), sep=",", dtype=value_dtype
+    )
     sliced = values[:logical_size]
     if dtype.startswith("float"):
         parsed_values = sliced.astype(np.float64).tolist()
@@ -521,8 +558,12 @@ def parse_quantized_tensor_example(info_text: str, section_header: str, info_pat
 def load_quantized_examples(info_path: Path) -> QuantizedModelExamples:
     info_text = info_path.read_text(encoding="utf-8")
     return QuantizedModelExamples(
-        input_tensor=parse_quantized_tensor_example(info_text, "test inputs value", info_path),
-        output_tensor=parse_quantized_tensor_example(info_text, "test outputs value", info_path),
+        input_tensor=parse_quantized_tensor_example(
+            info_text, "test inputs value", info_path
+        ),
+        output_tensor=parse_quantized_tensor_example(
+            info_text, "test outputs value", info_path
+        ),
     )
 
 

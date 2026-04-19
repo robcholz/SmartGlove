@@ -49,7 +49,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--hidden-dims", type=int, nargs="+", default=[128, 64])
-    parser.add_argument("--target", default="esp32s3", choices=["esp32s3", "esp32p4", "c"])
+    parser.add_argument(
+        "--target", default="esp32s3", choices=["esp32s3", "esp32p4", "c"]
+    )
     parser.add_argument("--bits", type=int, default=8, choices=[8, 16])
     parser.add_argument("--calibration-steps", type=int, default=32)
     parser.add_argument("--skip-quantization", action="store_true")
@@ -57,7 +59,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def make_loader(features: np.ndarray, labels: np.ndarray, batch_size: int, shuffle: bool) -> DataLoader:
+def make_loader(
+    features: np.ndarray, labels: np.ndarray, batch_size: int, shuffle: bool
+) -> DataLoader:
     dataset = TensorDataset(torch.from_numpy(features), torch.from_numpy(labels))
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
 
@@ -147,7 +151,9 @@ def main() -> None:
     test_features = transform_features(test_features, scaler)
 
     class_weights = compute_class_weights(train_labels, len(processed_metadata.labels))
-    train_loader = make_loader(train_features, train_labels, args.batch_size, shuffle=True)
+    train_loader = make_loader(
+        train_features, train_labels, args.batch_size, shuffle=True
+    )
 
     model = GestureMLP(
         input_dim=train_features.shape[1],
@@ -231,7 +237,9 @@ def main() -> None:
     print(f"val_accuracy={val_metrics['accuracy']:.4f}")
     print(f"test_accuracy={test_metrics['accuracy']:.4f}")
     print(f"test_macro_f1={test_metrics['macro_f1']:.4f}")
-    print(f"test_per_class_accuracy={per_class_accuracy(test_labels, test_predictions, metadata.labels)}")
+    print(
+        f"test_per_class_accuracy={per_class_accuracy(test_labels, test_predictions, metadata.labels)}"
+    )
     print(f"weights={artifacts.weights}")
     print(f"onnx={artifacts.onnx}")
     print(f"metadata={artifacts.metadata_json}")
@@ -254,7 +262,9 @@ def main() -> None:
     metadata.espdl_output_shape = quantized_examples.output_tensor.shape
     metadata.espdl_output_exponent = quantized_examples.output_tensor.exponent
     write_model_metadata(metadata, artifacts.metadata_json)
-    write_rust_metadata(metadata, RUST_METADATA_PATH, quantized_examples=quantized_examples)
+    write_rust_metadata(
+        metadata, RUST_METADATA_PATH, quantized_examples=quantized_examples
+    )
 
     if not args.skip_copy_component_model:
         COMPONENT_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)

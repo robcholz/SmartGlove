@@ -11,7 +11,7 @@ use smart_glove::inference::{
 use std::thread;
 
 const IMU_I2C_ADDRESS: u8 = 0x68;
-const SAMPLE_INTERVAL_MS: u32 = 20;
+const SAMPLE_INTERVAL_MS: u32 = 10;
 const INFERENCE_INTERVAL_FRAMES: usize = 10;
 const LIVE_INFERENCE_STACK_SIZE: usize = 24 * 1024;
 
@@ -40,7 +40,10 @@ fn run_live_inference() {
             report.exact_quantized_match,
             report.max_dequantized_abs_error
         ),
-        Err(err) => log::error!("esp-dl self-test failed before live inference: {err}"),
+        Err(err) => {
+            log::error!("esp-dl self-test failed before live inference: {err}");
+            return;
+        }
     }
 
     let peripherals = Peripherals::take().expect("failed to take peripherals");
@@ -157,6 +160,14 @@ fn run_live_inference() {
                 ) {
                     Ok(result) => {
                         let top3 = result.top_predictions(3);
+                        if top3.len() < 3 {
+                            log::error!(
+                                "gesture inference returned too few predictions: {}",
+                                top3.len()
+                            );
+                            FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                            continue;
+                        }
                         log::info!(
                             "gesture classification: label={} top3=[{}:{:.3}, {}:{:.3}, {}:{:.3}]",
                             result.predicted_label,

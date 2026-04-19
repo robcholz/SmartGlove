@@ -39,7 +39,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def benchmark_torch(model: GestureMLP, features: np.ndarray, repeat: int) -> dict[str, float]:
+def benchmark_torch(
+    model: GestureMLP, features: np.ndarray, repeat: int
+) -> dict[str, float]:
     sample = torch.from_numpy(features[:1]).float()
     for _ in range(5):
         with torch.no_grad():
@@ -58,7 +60,9 @@ def benchmark_torch(model: GestureMLP, features: np.ndarray, repeat: int) -> dic
     }
 
 
-def benchmark_onnx(session: ort.InferenceSession, input_name: str, features: np.ndarray, repeat: int) -> dict[str, float]:
+def benchmark_onnx(
+    session: ort.InferenceSession, input_name: str, features: np.ndarray, repeat: int
+) -> dict[str, float]:
     sample = features[:1].astype(np.float32)
     for _ in range(5):
         session.run(None, {input_name: sample})
@@ -75,10 +79,14 @@ def benchmark_onnx(session: ort.InferenceSession, input_name: str, features: np.
     }
 
 
-def predict_onnx_logits(session: ort.InferenceSession, input_name: str, features: np.ndarray) -> np.ndarray:
+def predict_onnx_logits(
+    session: ort.InferenceSession, input_name: str, features: np.ndarray
+) -> np.ndarray:
     return np.stack(
         [
-            session.run(None, {input_name: features[index : index + 1].astype(np.float32)})[0][0]
+            session.run(
+                None, {input_name: features[index : index + 1].astype(np.float32)}
+            )[0][0]
             for index in range(len(features))
         ],
         axis=0,
@@ -106,7 +114,9 @@ def main() -> None:
     with torch.no_grad():
         torch_logits = model(torch.from_numpy(test_features).float()).cpu().numpy()
 
-    session = ort.InferenceSession(str(artifacts.onnx), providers=["CPUExecutionProvider"])
+    session = ort.InferenceSession(
+        str(artifacts.onnx), providers=["CPUExecutionProvider"]
+    )
     input_name = session.get_inputs()[0].name
     onnx_logits = predict_onnx_logits(session, input_name, test_features)
 
@@ -140,13 +150,23 @@ def main() -> None:
         "onnx_latency_ms": onnx_latency,
         "torch_onnx_agreement": agreement,
         "onnx_max_abs_error": float(np.max(np.abs(torch_logits - onnx_logits))),
-        "per_class_accuracy": per_class_accuracy(test_labels, onnx_predictions, metadata.labels),
-        "confusion_matrix": confusion_matrix_payload(test_labels, onnx_predictions, metadata.labels),
+        "per_class_accuracy": per_class_accuracy(
+            test_labels, onnx_predictions, metadata.labels
+        ),
+        "confusion_matrix": confusion_matrix_payload(
+            test_labels, onnx_predictions, metadata.labels
+        ),
         "sample_predictions": samples,
         "artifacts": {
-            "weights_bytes": artifacts.weights.stat().st_size if artifacts.weights.exists() else 0,
-            "onnx_bytes": artifacts.onnx.stat().st_size if artifacts.onnx.exists() else 0,
-            "espdl_bytes": artifacts.espdl.stat().st_size if artifacts.espdl.exists() else 0,
+            "weights_bytes": artifacts.weights.stat().st_size
+            if artifacts.weights.exists()
+            else 0,
+            "onnx_bytes": artifacts.onnx.stat().st_size
+            if artifacts.onnx.exists()
+            else 0,
+            "espdl_bytes": artifacts.espdl.stat().st_size
+            if artifacts.espdl.exists()
+            else 0,
         },
     }
     write_json(artifacts.benchmark_json, payload)

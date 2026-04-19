@@ -1,6 +1,6 @@
 use smart_glove::inference::{
     run_quantized_self_test, run_raw_sensor_input_with_scratch, SlidingWindow, MODEL_INPUT_LEN,
-    MODEL_WINDOW_SIZE,
+    MODEL_LABELS, MODEL_WINDOW_SIZE,
 };
 use std::io::Error as IoError;
 use std::thread;
@@ -20,7 +20,7 @@ use network::{
 };
 use provision::{
     BasicProvision, EspProvisionCapabilityProvider, Provision, ProvisionCapabilityProvider,
-    ProvisionError,
+    ProvisionError, WifiProvisioningStatus,
 };
 use smart_glove::runtime_config::{load_runtime_config, RuntimeConfig};
 
@@ -30,7 +30,7 @@ const INFERENCE_INTERVAL_FRAMES: usize = 10;
 const LIVE_INFERENCE_STACK_SIZE: usize = 24 * 1024;
 const DEVICE_NAME: &str = "SmartGlove Provision";
 const ADVERTISING_WINDOW: Duration = Duration::from_secs(10);
-const EVENT_NAME: &str = "event.none";
+const EVENT_PREFIX: &str = "event.infer.";
 const EVENT_PAYLOAD_JSON: &str = "null";
 
 fn main() {
@@ -40,7 +40,7 @@ fn main() {
     let runtime_config = load_runtime_config().expect("failed to load network runtime config");
 
     log::info!(
-        "smart-glove live inference startup device_info_url={} status_ws_url={} sample_rate_hz={} batch_samples={}",
+        "starting smart glove live inference with device info url {}, status websocket {}, sample rate {} hz, batch size {}",
         runtime_config.device_info_url,
         runtime_config.status_ws_url,
         runtime_config.sample_rate_hz,
@@ -78,7 +78,7 @@ fn run_live_inference(config: RuntimeConfig) -> Result<(), Box<dyn std::error::E
 
     if config.sample_rate_hz != 1000u16 / (SAMPLE_INTERVAL_MS as u16) {
         log::warn!(
-            "runtime sample_rate_hz={} does not match inference loop cadence={}Hz",
+            "configured sample rate {} hz does not match inference loop cadence {} hz",
             config.sample_rate_hz,
             1000u16 / (SAMPLE_INTERVAL_MS as u16)
         );
@@ -131,23 +131,19 @@ fn run_live_inference(config: RuntimeConfig) -> Result<(), Box<dyn std::error::E
     )?;
 
     provider.set_ble_message_callback(Some(Box::new(|payload| {
-        log::info!(
-            "PROVISION_RX bytes={} payload={}",
-            payload.len(),
-            String::from_utf8_lossy(payload)
-        );
+        log::info!("received provisioning payload ({} bytes)", payload.len());
     })));
     provider.set_wifi_status_callback(Some(Box::new(|status| {
-        log::info!("PROVISION_STATUS {:?}", status);
+        log::info!("provisioning status: {}", describe_provision_status(status));
     })));
     provider.set_error_callback(Some(Box::new(|error| {
-        log::error!("PROVISION_ERROR {error}");
+        log::error!("provisioning error: {error}");
     })));
 
     let mut provisioner = BasicProvision::new(provider, ADVERTISING_WINDOW);
 
     log::info!(
-        "SMART_GLOVE_READY name={} device_id={} device_info_url={} status_ws_url={}",
+        "smart glove is ready with device name {}, device id {}, device info url {}, status websocket {}",
         DEVICE_NAME,
         device_id,
         config.device_info_url,
@@ -156,29 +152,35 @@ fn run_live_inference(config: RuntimeConfig) -> Result<(), Box<dyn std::error::E
 
     loop {
         log::info!(
-            "PROVISION_WINDOW_OPEN secs={}",
+            "opening provisioning window for {} seconds",
             ADVERTISING_WINDOW.as_secs()
         );
 
         match provisioner.start() {
             Ok(()) => {
-                log::info!("PROVISION_DONE success");
+                log::info!("provisioning completed successfully");
                 break;
             }
             Err(ProvisionError::Timeout) => {
-                log::warn!("PROVISION_DONE timeout");
+                log::warn!("provisioning timed out");
             }
             Err(err) => {
-                log::error!("PROVISION_DONE error={err}");
+                log::error!("provisioning failed: {err}");
             }
         }
 
         FreeRtos::delay_ms(1000u32);
     }
 
-    let events = [EVENT_NAME];
+    let event_names = MODEL_LABELS
+        .iter()
+        .copied()
+        .filter(|label| *label != "none")
+        .map(|label| format!("{EVENT_PREFIX}{label}"))
+        .collect::<Vec<_>>();
+    let events = event_names.iter().map(String::as_str).collect::<Vec<_>>();
     let status = send_device_info(&config.device_info_url, &device_id, &events)?;
-    log::info!("NETWORK_DEVICE_INFO_SENT status={status}");
+    log::debug!("sent device info to server with http status {}", status);
 
     let status_config = StatusReportConfig {
         websocket_url: &config.status_ws_url,
@@ -187,13 +189,10 @@ fn run_live_inference(config: RuntimeConfig) -> Result<(), Box<dyn std::error::E
         flush_interval: Duration::from_millis(config.flush_interval_ms),
     };
     let mut reporter = connect_status_reporter(&status_config, &device_id)?;
-    log::info!("NETWORK_WS_CONNECTED");
+    log::info!("connected to the status websocket");
 
     reporter.send_online()?;
-    log::info!("NETWORK_ONLINE_SENT");
-
-    reporter.send_event(EVENT_NAME, EVENT_PAYLOAD_JSON)?;
-    log::info!("NETWORK_EVENT_SENT name={}", EVENT_NAME);
+    log::info!("sent device online status");
 
     let mut sliding_window = Box::new(SlidingWindow::new());
     let mut feature_input = Box::new([0.0f32; MODEL_INPUT_LEN]);
@@ -272,10 +271,7 @@ fn run_live_inference(config: RuntimeConfig) -> Result<(), Box<dyn std::error::E
             },
         };
         if reporter.push_sensor_sample(network_sample)? {
-            log::debug!(
-                "NETWORK_BATCH_FLUSHED buffered_samples={}",
-                reporter.buffered_samples()
-            );
+            log::debug!("flushed a sensor batch to the server");
         }
 
         let frame = [
@@ -308,7 +304,7 @@ fn run_live_inference(config: RuntimeConfig) -> Result<(), Box<dyn std::error::E
                             FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
                             continue;
                         }
-                        log::info!(
+                        log::debug!(
                             "gesture classification: label={} top3=[{}:{:.3}, {}:{:.3}, {}:{:.3}]",
                             result.predicted_label,
                             top3[0].label,
@@ -318,6 +314,21 @@ fn run_live_inference(config: RuntimeConfig) -> Result<(), Box<dyn std::error::E
                             top3[2].label,
                             top3[2].score,
                         );
+                        if result.predicted_label != "none" {
+                            let event_name = format!("{EVENT_PREFIX}{}", result.predicted_label);
+                            match reporter.send_event(&event_name, EVENT_PAYLOAD_JSON) {
+                                Ok(()) => {
+                                    log::debug!("sent inference event {}", event_name);
+                                }
+                                Err(err) => {
+                                    log::error!(
+                                        "failed to send inference event {}: {}",
+                                        event_name,
+                                        err
+                                    );
+                                }
+                            }
+                        }
                     }
                     Err(err) => log::error!("gesture inference failed: {err}"),
                 }
@@ -336,4 +347,16 @@ fn run_live_inference(config: RuntimeConfig) -> Result<(), Box<dyn std::error::E
 
     #[allow(unreachable_code)]
     Ok(())
+}
+
+fn describe_provision_status(status: &WifiProvisioningStatus) -> &'static str {
+    match status {
+        WifiProvisioningStatus::BroadcastStarting => "starting bluetooth provisioning broadcast",
+        WifiProvisioningStatus::Broadcasting => "broadcasting bluetooth provisioning service",
+        WifiProvisioningStatus::BroadcastStopped => "stopped bluetooth provisioning broadcast",
+        WifiProvisioningStatus::CredentialsReceived => "received wi-fi credentials",
+        WifiProvisioningStatus::Connecting => "connecting to wi-fi",
+        WifiProvisioningStatus::Connected => "connected to wi-fi",
+        WifiProvisioningStatus::ConnectionFailed(_) => "wi-fi connection failed",
+    }
 }

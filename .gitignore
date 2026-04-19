@@ -14,6 +14,8 @@ training/glove_model.json
 training/glove_model.onnx
 training/glove_model.espdl
 
+processed_data/
+
 # ide
 .vscode/
 .zed/

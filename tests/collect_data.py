@@ -189,6 +189,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print raw serial sensor lines while capturing.",
     )
+    parser.add_argument(
+        "--auto",
+        action="store_true",
+        help="Record each session automatically for a prompted duration in milliseconds.",
+    )
     return parser
 
 
@@ -274,6 +279,21 @@ def prompt_session_count() -> int:
         return count
 
 
+def prompt_session_duration_ms() -> int:
+    while True:
+        raw = input("session duration in ms: ").strip()
+        try:
+            duration_ms = int(raw)
+        except ValueError:
+            print("please enter a whole number", flush=True)
+            continue
+
+        if duration_ms <= 0:
+            print("session duration must be at least 1 ms", flush=True)
+            continue
+        return duration_ms
+
+
 def next_session_index(label_dir: Path) -> int:
     max_index = 0
     if label_dir.exists():
@@ -330,6 +350,17 @@ def wait_for_space(
             return
         if key in {"\x03", "\x04"}:
             raise KeyboardInterrupt
+
+
+def wait_for_duration(
+    duration_ms: int,
+    serial_failed: threading.Event,
+) -> None:
+    deadline = time.monotonic() + (duration_ms / 1000.0)
+    while time.monotonic() < deadline:
+        if serial_failed.is_set():
+            raise RuntimeError("serial reader stopped while auto-recording")
+        time.sleep(0.05)
 
 
 def stream_sensor_output(
@@ -463,30 +494,32 @@ def main() -> int:
         wait_for_serial_data(serial_ready, serial_failed, output_state)
         label = prompt_label(dataset_dir)
         session_count = prompt_session_count()
+        session_duration_ms = prompt_session_duration_ms() if args.auto else None
         label_dir = dataset_dir / label
         first_session_index = next_session_index(label_dir)
         print(f"dataset label directory: {label_dir}", flush=True)
-        with RawKeyboard() as keyboard:
+        if args.auto:
+            print(
+                f"auto mode enabled: each session will record for {session_duration_ms} ms",
+                flush=True,
+            )
             for offset in range(session_count):
                 session_index = first_session_index + offset
                 output_path = build_output_path(label_dir, session_index)
-
-                wait_for_space(
-                    keyboard,
-                    serial_failed,
-                    (
-                        f"Session {offset + 1}/{session_count} "
-                        f"(session index {session_index}). Press space to start recording."
-                    ),
+                print(
+                    f"Session {offset + 1}/{session_count} "
+                    f"(session index {session_index}) starting automatically.",
+                    flush=True,
                 )
 
                 recorder.start_session(output_path, session_index, label)
                 print(
-                    f"recording session {session_index} -> {output_path}. Press space to stop.",
+                    f"recording session {session_index} -> {output_path} "
+                    f"for {session_duration_ms} ms.",
                     flush=True,
                 )
 
-                wait_for_space(keyboard, serial_failed, "")
+                wait_for_duration(session_duration_ms, serial_failed)
                 result = recorder.stop_session()
                 if result is None:
                     raise RuntimeError("recording session was not active")
@@ -497,6 +530,38 @@ def main() -> int:
                     f"saved session {session_index}: {samples_written} samples -> {saved_path}",
                     flush=True,
                 )
+        else:
+            with RawKeyboard() as keyboard:
+                for offset in range(session_count):
+                    session_index = first_session_index + offset
+                    output_path = build_output_path(label_dir, session_index)
+
+                    wait_for_space(
+                        keyboard,
+                        serial_failed,
+                        (
+                            f"Session {offset + 1}/{session_count} "
+                            f"(session index {session_index}). Press space to start recording."
+                        ),
+                    )
+
+                    recorder.start_session(output_path, session_index, label)
+                    print(
+                        f"recording session {session_index} -> {output_path}. Press space to stop.",
+                        flush=True,
+                    )
+
+                    wait_for_space(keyboard, serial_failed, "")
+                    result = recorder.stop_session()
+                    if result is None:
+                        raise RuntimeError("recording session was not active")
+
+                    saved_path, samples_written = result
+                    completed_sessions += 1
+                    print(
+                        f"saved session {session_index}: {samples_written} samples -> {saved_path}",
+                        flush=True,
+                    )
     except KeyboardInterrupt:
         print("\nstopping capture...", flush=True)
     finally:

@@ -94,6 +94,15 @@ fn run_live_inference() {
             }
         };
 
+        let vec = match imu.read_vec() {
+            Ok(vec) => vec,
+            Err(err) => {
+                log::error!("failed to read gyroscope vector: {:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
+
         let thumb = match thumb_finger.read_value() {
             Ok(value) => value,
             Err(err) => {
@@ -144,6 +153,9 @@ fn run_live_inference() {
             acc[0],
             acc[1],
             acc[2],
+            vec[0],
+            vec[1],
+            vec[2],
         ];
 
         sliding_window.push_frame(frame);

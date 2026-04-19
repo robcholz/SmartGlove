@@ -286,24 +286,7 @@ pub fn run_raw_sensor_input_with_scratch(
 #[cfg(esp_idf_comp_espdl_experiment_enabled)]
 pub fn run_quantized_self_test() -> Result<SelfTestReport, InferenceError> {
     run_with_relaxed_task_wdt(|| {
-        use core::mem::MaybeUninit;
-
-        let mut raw =
-            MaybeUninit::<esp_idf_svc::sys::espdl_experiment::espdl_inference_result_t>::zeroed();
-        let err = unsafe {
-            esp_idf_svc::sys::espdl_experiment::espdl_experiment_run_quantized_input(
-                ESPDL_TEST_INPUT.as_ptr(),
-                ESPDL_TEST_INPUT.len(),
-                ESPDL_INPUT_EXPONENT,
-                raw.as_mut_ptr(),
-            )
-        };
-        let raw = unsafe { raw.assume_init() };
-        if err != 0 {
-            return Err(InferenceError::Esp(err));
-        }
-
-        let inference = map_ffi_result(&raw)?;
+        let inference = run_normalized_input(&ESPDL_TEST_INPUT)?;
         let exact_quantized_match = inference.quantized_output == ESPDL_TEST_OUTPUT;
         let scale = 2f32.powi(ESPDL_OUTPUT_EXPONENT);
         let mut max_dequantized_abs_error = 0.0f32;

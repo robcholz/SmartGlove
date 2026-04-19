@@ -268,7 +268,7 @@ def build_windows(
     labels: list[int] = []
 
     for _, group in df.groupby(SUBJECT_COL, sort=False):
-        sensors = scaler.transform(group[SENSOR_COLS]).astype(np.float32)
+        sensors = scaler.transform(group[SENSOR_COLS].to_numpy()).astype(np.float32)
         encoded_labels = label_encoder.transform(group[LABEL_COL].astype(str))
 
         if len(group) < WINDOW_SIZE:
@@ -464,6 +464,26 @@ def ensure_output_paths(artifacts_dir: Path, weights_name: str, onnx_name: str, 
 
 def write_metadata(metadata: TrainingMetadata, output_path: Path) -> None:
     output_path.write_text(json.dumps(asdict(metadata), indent=2) + "\n", encoding="utf-8")
+
+
+def load_metadata(metadata_path: Path | None = None) -> TrainingMetadata:
+    metadata_path = metadata_path or (TRAINING_DIR / "glove_model_metadata.json")
+    return TrainingMetadata(**json.loads(metadata_path.read_text(encoding="utf-8")))
+
+
+def build_label_encoder_from_metadata(metadata: TrainingMetadata) -> LabelEncoder:
+    encoder = LabelEncoder()
+    encoder.classes_ = np.asarray(metadata.label_classes, dtype=object)
+    return encoder
+
+
+def build_scaler_from_metadata(metadata: TrainingMetadata) -> StandardScaler:
+    scaler = StandardScaler()
+    scaler.mean_ = np.asarray(metadata.scaler_mean, dtype=np.float64)
+    scaler.scale_ = np.asarray(metadata.scaler_scale, dtype=np.float64)
+    scaler.var_ = scaler.scale_ ** 2
+    scaler.n_features_in_ = len(metadata.sensor_columns)
+    return scaler
 
 
 def write_rust_metadata(metadata: TrainingMetadata, output_path: Path) -> None:

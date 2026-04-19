@@ -13,11 +13,9 @@
 #include "dl_model_context.hpp"
 #include "dl_tensor_base.hpp"
 #include "esp_heap_caps.h"
-#include "esp_log.h"
 
 extern const uint8_t model_espdl[] asm("_binary_model_espdl_start");
 
-static constexpr const char *TAG = "espdl_experiment";
 static constexpr size_t OUTPUT_PREVIEW_VALUES = 8;
 
 static void format_output_preview(char *buffer, size_t buffer_size, const char *name, dl::TensorBase *tensor)
@@ -247,13 +245,6 @@ static esp_err_t run_model_with_input(InputApplier apply_input, espdl_inference_
     }
 
     std::memset(out_result, 0, sizeof(*out_result));
-
-    ESP_LOGI(TAG,
-             "heap before model load: internal_free=%u internal_largest=%u spiram_free=%u spiram_largest=%u",
-             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
-             static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
-             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
-             static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)));
 
     dl::MemoryManagerGreedy memory_manager(0);
     dl::Model model((const char *)model_espdl,

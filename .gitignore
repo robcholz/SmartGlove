@@ -6,6 +6,7 @@ target/
 # python
 .venv/
 .uv-cache/
+**/__pycache__/
 training/glove_model.info
 training/glove_model_metadata.json
 training/glove_model.pt

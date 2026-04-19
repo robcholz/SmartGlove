@@ -14,6 +14,7 @@ provision-e2e = "tests.provision_e2e:main"
 provision-serial = "tests.serial_capture:main"
 provision-test = "tests.provision_test:main"
 gesture-model = "training.postprocess:main"
+gesture-infer = "training.infer:main"
 
 [build-system]
 requires = ["hatchling"]

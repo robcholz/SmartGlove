@@ -2,6 +2,7 @@
 mod generated;
 
 use core::ffi::CStr;
+use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
@@ -31,6 +32,14 @@ impl Display for InferenceError {
 impl Error for InferenceError {}
 
 pub const MODEL_INPUT_LEN: usize = MODEL_WINDOW_SIZE * MODEL_FEATURE_COUNT;
+pub type SensorFrame = [f32; MODEL_FEATURE_COUNT];
+
+#[derive(Clone, Copy, Debug)]
+pub struct RankedPrediction {
+    pub index: usize,
+    pub label: &'static str,
+    pub score: f32,
+}
 
 #[derive(Clone, Debug)]
 pub struct InferenceResult {
@@ -51,13 +60,108 @@ pub struct SelfTestReport {
     pub max_dequantized_abs_error: f32,
 }
 
+pub struct SlidingWindow {
+    frames: [SensorFrame; MODEL_WINDOW_SIZE],
+    len: usize,
+    next: usize,
+}
+
+impl SlidingWindow {
+    pub fn new() -> Self {
+        Self {
+            frames: [[0.0; MODEL_FEATURE_COUNT]; MODEL_WINDOW_SIZE],
+            len: 0,
+            next: 0,
+        }
+    }
+
+    pub fn push_frame(&mut self, frame: SensorFrame) {
+        self.frames[self.next] = frame;
+        self.next = (self.next + 1) % MODEL_WINDOW_SIZE;
+        if self.len < MODEL_WINDOW_SIZE {
+            self.len += 1;
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.len == MODEL_WINDOW_SIZE
+    }
+
+    pub fn flatten_if_full(&self) -> Option<[f32; MODEL_INPUT_LEN]> {
+        if !self.is_full() {
+            return None;
+        }
+
+        let mut flattened = [0.0f32; MODEL_INPUT_LEN];
+        self.copy_into_flattened(&mut flattened);
+
+        Some(flattened)
+    }
+
+    pub fn copy_into_flattened(&self, flattened: &mut [f32; MODEL_INPUT_LEN]) -> bool {
+        if !self.is_full() {
+            return false;
+        }
+
+        let oldest = self.next;
+        for window_index in 0..MODEL_WINDOW_SIZE {
+            let frame = self.frames[(oldest + window_index) % MODEL_WINDOW_SIZE];
+            let base = window_index * MODEL_FEATURE_COUNT;
+            flattened[base..base + MODEL_FEATURE_COUNT].copy_from_slice(&frame);
+        }
+
+        true
+    }
+}
+
+impl Default for SlidingWindow {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub fn normalize_flat_input(input: &[f32; MODEL_INPUT_LEN]) -> [f32; MODEL_INPUT_LEN] {
     let mut normalized = [0.0f32; MODEL_INPUT_LEN];
+    normalize_flat_input_into(input, &mut normalized);
+    normalized
+}
+
+pub fn normalize_flat_input_into(
+    input: &[f32; MODEL_INPUT_LEN],
+    normalized: &mut [f32; MODEL_INPUT_LEN],
+) {
     for (index, value) in input.iter().copied().enumerate() {
         let feature_index = index % MODEL_FEATURE_COUNT;
         normalized[index] = (value - FEATURE_MEANS[feature_index]) / FEATURE_SCALES[feature_index];
     }
-    normalized
+}
+
+impl InferenceResult {
+    pub fn top_predictions(&self, count: usize) -> Vec<RankedPrediction> {
+        let mut ranked: Vec<_> = self
+            .dequantized_output
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, score)| RankedPrediction {
+                index,
+                label: MODEL_LABELS[index],
+                score,
+            })
+            .collect();
+        ranked.sort_by(|left, right| {
+            right
+                .score
+                .partial_cmp(&left.score)
+                .unwrap_or(Ordering::Equal)
+        });
+        ranked.truncate(count.min(ranked.len()));
+        ranked
+    }
 }
 
 #[cfg(esp_idf_comp_espdl_experiment_enabled)]
@@ -66,6 +170,33 @@ fn parse_c_string(buffer: &[u8]) -> String {
         .to_string_lossy()
         .trim_end_matches('\0')
         .to_string()
+}
+
+#[cfg(esp_idf_comp_espdl_experiment_enabled)]
+unsafe fn reconfigure_task_wdt(timeout_ms: u32, idle_core_mask: u32) -> i32 {
+    let config = esp_idf_svc::sys::esp_task_wdt_config_t {
+        timeout_ms,
+        idle_core_mask,
+        trigger_panic: true,
+    };
+    esp_idf_svc::sys::esp_task_wdt_reconfigure(&config)
+}
+
+#[cfg(esp_idf_comp_espdl_experiment_enabled)]
+fn run_with_relaxed_task_wdt<T>(
+    f: impl FnOnce() -> Result<T, InferenceError>,
+) -> Result<T, InferenceError> {
+    unsafe {
+        let _ = reconfigure_task_wdt(30_000, 0);
+    }
+
+    let result = f();
+
+    unsafe {
+        let _ = reconfigure_task_wdt(5_000, (1 << 0) | (1 << 1));
+    }
+
+    result
 }
 
 #[cfg(esp_idf_comp_espdl_experiment_enabled)]
@@ -110,22 +241,24 @@ fn map_ffi_result(
 pub fn run_normalized_input(
     input: &[f32; MODEL_INPUT_LEN],
 ) -> Result<InferenceResult, InferenceError> {
-    use core::mem::MaybeUninit;
+    run_with_relaxed_task_wdt(|| {
+        use core::mem::MaybeUninit;
 
-    let mut raw =
-        MaybeUninit::<esp_idf_svc::sys::espdl_experiment::espdl_inference_result_t>::zeroed();
-    let err = unsafe {
-        esp_idf_svc::sys::espdl_experiment::espdl_experiment_run_float_input(
-            input.as_ptr(),
-            input.len(),
-            raw.as_mut_ptr(),
-        )
-    };
-    let raw = unsafe { raw.assume_init() };
-    if err != 0 {
-        return Err(InferenceError::Esp(err));
-    }
-    map_ffi_result(&raw)
+        let mut raw =
+            MaybeUninit::<esp_idf_svc::sys::espdl_experiment::espdl_inference_result_t>::zeroed();
+        let err = unsafe {
+            esp_idf_svc::sys::espdl_experiment::espdl_experiment_run_float_input(
+                input.as_ptr(),
+                input.len(),
+                raw.as_mut_ptr(),
+            )
+        };
+        let raw = unsafe { raw.assume_init() };
+        if err != 0 {
+            return Err(InferenceError::Esp(err));
+        }
+        map_ffi_result(&raw)
+    })
 }
 
 #[cfg(not(esp_idf_comp_espdl_experiment_enabled))]
@@ -142,43 +275,53 @@ pub fn run_raw_sensor_input(
     run_normalized_input(&normalized)
 }
 
+pub fn run_raw_sensor_input_with_scratch(
+    input: &[f32; MODEL_INPUT_LEN],
+    normalized: &mut [f32; MODEL_INPUT_LEN],
+) -> Result<InferenceResult, InferenceError> {
+    normalize_flat_input_into(input, normalized);
+    run_normalized_input(normalized)
+}
+
 #[cfg(esp_idf_comp_espdl_experiment_enabled)]
 pub fn run_quantized_self_test() -> Result<SelfTestReport, InferenceError> {
-    use core::mem::MaybeUninit;
+    run_with_relaxed_task_wdt(|| {
+        use core::mem::MaybeUninit;
 
-    let mut raw =
-        MaybeUninit::<esp_idf_svc::sys::espdl_experiment::espdl_inference_result_t>::zeroed();
-    let err = unsafe {
-        esp_idf_svc::sys::espdl_experiment::espdl_experiment_run_quantized_input(
-            ESPDL_TEST_INPUT.as_ptr(),
-            ESPDL_TEST_INPUT.len(),
-            ESPDL_INPUT_EXPONENT,
-            raw.as_mut_ptr(),
-        )
-    };
-    let raw = unsafe { raw.assume_init() };
-    if err != 0 {
-        return Err(InferenceError::Esp(err));
-    }
+        let mut raw =
+            MaybeUninit::<esp_idf_svc::sys::espdl_experiment::espdl_inference_result_t>::zeroed();
+        let err = unsafe {
+            esp_idf_svc::sys::espdl_experiment::espdl_experiment_run_quantized_input(
+                ESPDL_TEST_INPUT.as_ptr(),
+                ESPDL_TEST_INPUT.len(),
+                ESPDL_INPUT_EXPONENT,
+                raw.as_mut_ptr(),
+            )
+        };
+        let raw = unsafe { raw.assume_init() };
+        if err != 0 {
+            return Err(InferenceError::Esp(err));
+        }
 
-    let inference = map_ffi_result(&raw)?;
-    let exact_quantized_match = inference.quantized_output == ESPDL_TEST_OUTPUT;
-    let scale = 2f32.powi(ESPDL_OUTPUT_EXPONENT);
-    let mut max_dequantized_abs_error = 0.0f32;
-    for (actual, expected_quantized) in inference
-        .dequantized_output
-        .iter()
-        .copied()
-        .zip(ESPDL_TEST_OUTPUT.iter().copied())
-    {
-        let expected = f32::from(expected_quantized) * scale;
-        max_dequantized_abs_error = max_dequantized_abs_error.max((actual - expected).abs());
-    }
+        let inference = map_ffi_result(&raw)?;
+        let exact_quantized_match = inference.quantized_output == ESPDL_TEST_OUTPUT;
+        let scale = 2f32.powi(ESPDL_OUTPUT_EXPONENT);
+        let mut max_dequantized_abs_error = 0.0f32;
+        for (actual, expected_quantized) in inference
+            .dequantized_output
+            .iter()
+            .copied()
+            .zip(ESPDL_TEST_OUTPUT.iter().copied())
+        {
+            let expected = f32::from(expected_quantized) * scale;
+            max_dequantized_abs_error = max_dequantized_abs_error.max((actual - expected).abs());
+        }
 
-    Ok(SelfTestReport {
-        inference,
-        exact_quantized_match,
-        max_dequantized_abs_error,
+        Ok(SelfTestReport {
+            inference,
+            exact_quantized_match,
+            max_dequantized_abs_error,
+        })
     })
 }
 

@@ -1,30 +1,60 @@
+use smart_glove::inference::{
+    run_quantized_self_test, run_raw_sensor_input_with_scratch, SlidingWindow, MODEL_INPUT_LEN,
+    MODEL_WINDOW_SIZE,
+};
+use std::io::Error as IoError;
+use std::thread;
+use std::time::Duration;
+
 use drivers::{AnalogFlexSensor, FlexSensor, Imu, Mpu6050Imu};
+use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::hal::adc::oneshot::AdcDriver;
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::hal::i2c::{I2cConfig, I2cDriver};
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::hal::units::*;
-use smart_glove::inference::{
-    run_quantized_self_test, run_raw_sensor_input_with_scratch, SlidingWindow, MODEL_INPUT_LEN,
-    MODEL_WINDOW_SIZE,
+use esp_idf_svc::nvs::EspDefaultNvsPartition;
+use identity::DeviceId;
+use network::{
+    connect_status_reporter, send_device_info, FlexReadings, SensorSample, StatusReportConfig,
 };
-use std::thread;
+use provision::{
+    BasicProvision, EspProvisionCapabilityProvider, Provision, ProvisionCapabilityProvider,
+    ProvisionError,
+};
+use smart_glove::runtime_config::{load_runtime_config, RuntimeConfig};
 
 const IMU_I2C_ADDRESS: u8 = 0x68;
 const SAMPLE_INTERVAL_MS: u32 = 10;
 const INFERENCE_INTERVAL_FRAMES: usize = 10;
 const LIVE_INFERENCE_STACK_SIZE: usize = 24 * 1024;
+const DEVICE_NAME: &str = "SmartGlove Provision";
+const ADVERTISING_WINDOW: Duration = Duration::from_secs(10);
+const EVENT_NAME: &str = "event.none";
+const EVENT_PAYLOAD_JSON: &str = "null";
 
 fn main() {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
 
-    log::info!("smart-glove live inference startup");
+    let runtime_config = load_runtime_config().expect("failed to load network runtime config");
+
+    log::info!(
+        "smart-glove live inference startup device_info_url={} status_ws_url={} sample_rate_hz={} batch_samples={}",
+        runtime_config.device_info_url,
+        runtime_config.status_ws_url,
+        runtime_config.sample_rate_hz,
+        runtime_config.batch_samples
+    );
 
     let worker = thread::Builder::new()
         .name("live-inference".into())
         .stack_size(LIVE_INFERENCE_STACK_SIZE)
-        .spawn(run_live_inference)
+        .spawn(move || {
+            if let Err(err) = run_live_inference(runtime_config) {
+                log::error!("live inference worker failed: {err}");
+            }
+        })
         .expect("failed to spawn live inference worker");
 
     if let Err(err) = worker.join() {
@@ -32,7 +62,7 @@ fn main() {
     }
 }
 
-fn run_live_inference() {
+fn run_live_inference(config: RuntimeConfig) -> Result<(), Box<dyn std::error::Error>> {
     match run_quantized_self_test() {
         Ok(report) => log::info!(
             "esp-dl self-test ok: predicted_label={} exact_quantized_match={} max_dequantized_abs_error={:.6}",
@@ -42,11 +72,23 @@ fn run_live_inference() {
         ),
         Err(err) => {
             log::error!("esp-dl self-test failed before live inference: {err}");
-            return;
+            return Ok(());
         }
     }
 
+    if config.sample_rate_hz != 1000u16 / (SAMPLE_INTERVAL_MS as u16) {
+        log::warn!(
+            "runtime sample_rate_hz={} does not match inference loop cadence={}Hz",
+            config.sample_rate_hz,
+            1000u16 / (SAMPLE_INTERVAL_MS as u16)
+        );
+    }
+
+    let device_id = DeviceId::from_factory_mac()?.to_hex_string();
     let peripherals = Peripherals::take().expect("failed to take peripherals");
+    let sysloop = EspSystemEventLoop::take()?;
+    let nvs = EspDefaultNvsPartition::take()?;
+    let (wifi_modem, bluetooth_modem) = peripherals.modem.split();
 
     let i2c_config = I2cConfig::new().baudrate(100.kHz().into());
     let i2c = I2cDriver::new(
@@ -61,12 +103,10 @@ fn run_live_inference() {
     let mut imu = match Mpu6050Imu::new_with_addr(i2c, IMU_I2C_ADDRESS, &mut delay) {
         Ok(imu) => imu,
         Err(err) => {
-            log::error!(
-                "failed to init MPU6050 on gpio47/gpio48 at address 0x{:02x}: {:?}",
-                IMU_I2C_ADDRESS,
-                err
-            );
-            return;
+            return Err(IoError::other(format!(
+                "failed to init MPU6050 on gpio47/gpio48 at address 0x{IMU_I2C_ADDRESS:02x}: {err:?}"
+            ))
+            .into());
         }
     };
 
@@ -82,6 +122,79 @@ fn run_live_inference() {
     let mut pinky_finger = AnalogFlexSensor::new_with_pin(&adc, peripherals.pins.gpio8)
         .expect("failed to init pinky sensor");
 
+    let mut provider = EspProvisionCapabilityProvider::new(
+        DEVICE_NAME,
+        wifi_modem,
+        bluetooth_modem,
+        sysloop,
+        Some(nvs),
+    )?;
+
+    provider.set_ble_message_callback(Some(Box::new(|payload| {
+        log::info!(
+            "PROVISION_RX bytes={} payload={}",
+            payload.len(),
+            String::from_utf8_lossy(payload)
+        );
+    })));
+    provider.set_wifi_status_callback(Some(Box::new(|status| {
+        log::info!("PROVISION_STATUS {:?}", status);
+    })));
+    provider.set_error_callback(Some(Box::new(|error| {
+        log::error!("PROVISION_ERROR {error}");
+    })));
+
+    let mut provisioner = BasicProvision::new(provider, ADVERTISING_WINDOW);
+
+    log::info!(
+        "SMART_GLOVE_READY name={} device_id={} device_info_url={} status_ws_url={}",
+        DEVICE_NAME,
+        device_id,
+        config.device_info_url,
+        config.status_ws_url
+    );
+
+    loop {
+        log::info!(
+            "PROVISION_WINDOW_OPEN secs={}",
+            ADVERTISING_WINDOW.as_secs()
+        );
+
+        match provisioner.start() {
+            Ok(()) => {
+                log::info!("PROVISION_DONE success");
+                break;
+            }
+            Err(ProvisionError::Timeout) => {
+                log::warn!("PROVISION_DONE timeout");
+            }
+            Err(err) => {
+                log::error!("PROVISION_DONE error={err}");
+            }
+        }
+
+        FreeRtos::delay_ms(1000u32);
+    }
+
+    let events = [EVENT_NAME];
+    let status = send_device_info(&config.device_info_url, &device_id, &events)?;
+    log::info!("NETWORK_DEVICE_INFO_SENT status={status}");
+
+    let status_config = StatusReportConfig {
+        websocket_url: &config.status_ws_url,
+        sample_rate_hz: config.sample_rate_hz,
+        batch_samples: config.batch_samples,
+        flush_interval: Duration::from_millis(config.flush_interval_ms),
+    };
+    let mut reporter = connect_status_reporter(&status_config, &device_id)?;
+    log::info!("NETWORK_WS_CONNECTED");
+
+    reporter.send_online()?;
+    log::info!("NETWORK_ONLINE_SENT");
+
+    reporter.send_event(EVENT_NAME, EVENT_PAYLOAD_JSON)?;
+    log::info!("NETWORK_EVENT_SENT name={}", EVENT_NAME);
+
     let mut sliding_window = Box::new(SlidingWindow::new());
     let mut feature_input = Box::new([0.0f32; MODEL_INPUT_LEN]);
     let mut normalized_window = Box::new([0.0f32; MODEL_INPUT_LEN]);
@@ -92,6 +205,15 @@ fn run_live_inference() {
             Ok(acc) => acc,
             Err(err) => {
                 log::error!("failed to read accelerometer: {:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
+
+        let gyro = match imu.read_vec() {
+            Ok(vec) => vec,
+            Err(err) => {
+                log::error!("failed to read vector: {:?}", err);
                 FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
                 continue;
             }
@@ -138,6 +260,24 @@ fn run_live_inference() {
             }
         };
 
+        let network_sample = SensorSample {
+            imu_acc: acc,
+            vel: gyro,
+            flex: FlexReadings {
+                thumb: thumb as f32,
+                index: index as f32,
+                middle: middle as f32,
+                ring: ring as f32,
+                pinky: pinky as f32,
+            },
+        };
+        if reporter.push_sensor_sample(network_sample)? {
+            log::debug!(
+                "NETWORK_BATCH_FLUSHED buffered_samples={}",
+                reporter.buffered_samples()
+            );
+        }
+
         let frame = [
             thumb as f32,
             index as f32,
@@ -183,7 +323,7 @@ fn run_live_inference() {
                 }
             }
         } else if frame_counter % 25 == 0 {
-            log::info!(
+            log::debug!(
                 "collecting samples: buffered={}/{} latest_frame={:?}",
                 sliding_window.len(),
                 MODEL_WINDOW_SIZE,
@@ -193,4 +333,7 @@ fn run_live_inference() {
 
         FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
     }
+
+    #[allow(unreachable_code)]
+    Ok(())
 }

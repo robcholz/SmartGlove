@@ -50,7 +50,7 @@ impl DeviceSecret {
             let mut secret = [0_u8; DEVICE_SECRET_LEN];
             let stored = nvs
                 .get_blob(DEVICE_SECRET_KEY, &mut secret)?
-                .ok_or_else(|| EspError::from_infallible::<{ sys::ESP_FAIL }>())?;
+                .ok_or_else(EspError::from_infallible::<{ sys::ESP_FAIL }>)?;
 
             if stored.len() != DEVICE_SECRET_LEN {
                 return Err(EspError::from_infallible::<{ sys::ESP_ERR_INVALID_SIZE }>());

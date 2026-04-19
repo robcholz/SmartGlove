@@ -7,7 +7,7 @@ resolver = "2"
 rust-version = "1.82"
 
 [workspace]
-members = ["src/provision", "src/drivers"]
+members = ["src/provision", "src/drivers", "src/identity", "src/network"]
 
 [[bin]]
 name = "smart-glove"
@@ -16,6 +16,26 @@ harness = false # do not use the built-in cargo test harness -> resolve rust-ana
 [[bin]]
 name = "provision"
 path = "src/bin/provision.rs"
+harness = false
+
+[[bin]]
+name = "identity"
+path = "src/bin/identity.rs"
+harness = false
+
+[[bin]]
+name = "driver"
+path = "src/bin/driver.rs"
+harness = false
+
+[[bin]]
+name = "provision_network"
+path = "src/bin/provision_network.rs"
+harness = false
+
+[[bin]]
+name = "registration_probe"
+path = "src/bin/registration_probe.rs"
 harness = false
 
 [profile.release]
@@ -34,13 +54,18 @@ log = "0.4"
 esp-idf-svc = { version = "0.52.1", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
 # Remove `generic-queue-8` if you plan to use `embassy-time` WITH `embassy-executor`
 embassy-time = { version = "0.5", features = ["generic-queue-8"] }
+identity = { path = "src/identity" }
 provision = { path = "src/provision" }
 drivers = { path = "src/drivers" }
+network = { path = "src/network" }
 
 [[package.metadata.esp-idf-sys.extra_components]]
 component_dirs = ["src/experiment/components"]
 bindings_header = "src/experiment/espdl_bindings.h"
 bindings_module = "espdl_experiment"
+
+[[package.metadata.esp-idf-sys.extra_components]]
+remote_component = { name = "espressif/esp_websocket_client", version = "1.1.0" }
 
 [build-dependencies]
 embuild = "0.33"

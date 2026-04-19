@@ -22,12 +22,18 @@ from training.postprocess import (
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run SmartGlove inference in Python against the dataset")
+    parser = argparse.ArgumentParser(
+        description="Run SmartGlove inference in Python against the dataset"
+    )
     parser.add_argument("--weights", type=Path, default=TRAINING_DIR / "glove_model.pt")
     parser.add_argument("--onnx", type=Path, default=TRAINING_DIR / "glove_model.onnx")
-    parser.add_argument("--metadata", type=Path, default=TRAINING_DIR / "glove_model_metadata.json")
+    parser.add_argument(
+        "--metadata", type=Path, default=TRAINING_DIR / "glove_model_metadata.json"
+    )
     parser.add_argument("--split", choices=["train", "val", "all"], default="val")
-    parser.add_argument("--limit", type=int, default=5, help="How many sample predictions to print")
+    parser.add_argument(
+        "--limit", type=int, default=5, help="How many sample predictions to print"
+    )
     return parser.parse_args()
 
 
@@ -77,7 +83,9 @@ def main() -> None:
     input_name = session.get_inputs()[0].name
     onnx_logits = np.stack(
         [
-            session.run(None, {input_name: windows[index : index + 1].astype(np.float32)})[0][0]
+            session.run(
+                None, {input_name: windows[index : index + 1].astype(np.float32)}
+            )[0][0]
             for index in range(len(windows))
         ],
         axis=0,

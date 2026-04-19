@@ -10,6 +10,7 @@ import struct
 import os
 from datetime import datetime
 
+
 def create_manual_espdl(onnx_path, espdl_path, target="esp32s3", num_bits=8):
     """
     Create ESPDL file manually from ONNX model
@@ -31,19 +32,23 @@ def create_manual_espdl(onnx_path, espdl_path, target="esp32s3", num_bits=8):
 
         for input_tensor in model.graph.input:
             shape = [dim.dim_value for dim in input_tensor.type.tensor_type.shape.dim]
-            input_info.append({
-                'name': input_tensor.name,
-                'shape': shape,
-                'dtype': input_tensor.type.tensor_type.elem_type
-            })
+            input_info.append(
+                {
+                    "name": input_tensor.name,
+                    "shape": shape,
+                    "dtype": input_tensor.type.tensor_type.elem_type,
+                }
+            )
 
         for output_tensor in model.graph.output:
             shape = [dim.dim_value for dim in output_tensor.type.tensor_type.shape.dim]
-            output_info.append({
-                'name': output_tensor.name,
-                'shape': shape,
-                'dtype': output_tensor.type.tensor_type.elem_type
-            })
+            output_info.append(
+                {
+                    "name": output_tensor.name,
+                    "shape": shape,
+                    "dtype": output_tensor.type.tensor_type.elem_type,
+                }
+            )
 
         print(f"   Inputs: {len(input_info)}")
         for inp in input_info:
@@ -61,22 +66,22 @@ def create_manual_espdl(onnx_path, espdl_path, target="esp32s3", num_bits=8):
         # - Quantized weights
         # - Layer information
 
-        magic = b'ESPDL'  # ESPDL magic number
-        version = struct.pack('<I', 1)  # Version 1
-        target_id = struct.pack('<I', 0)  # ESP32-S3 = 0
+        magic = b"ESPDL"  # ESPDL magic number
+        version = struct.pack("<I", 1)  # Version 1
+        target_id = struct.pack("<I", 0)  # ESP32-S3 = 0
 
         # Model info
-        model_name = model.graph.name.encode('utf-8')[:64].ljust(64, b'\0')
-        model_name_len = struct.pack('<I', len(model_name))
+        model_name = model.graph.name.encode("utf-8")[:64].ljust(64, b"\0")
+        model_name_len = struct.pack("<I", len(model_name))
 
         # Create quantized weights placeholder
         # In a real implementation, you'd quantize the actual weights
         # For now, create synthetic quantized data
-        total_params = sum(np.prod(inp['shape']) for inp in input_info + output_info)
+        total_params = sum(np.prod(inp["shape"]) for inp in input_info + output_info)
         quantized_weights = np.random.randint(-128, 127, total_params, dtype=np.int8)
 
         # Pack the ESPDL file
-        with open(espdl_path, 'wb') as f:
+        with open(espdl_path, "wb") as f:
             f.write(magic)
             f.write(version)
             f.write(target_id)
@@ -84,26 +89,26 @@ def create_manual_espdl(onnx_path, espdl_path, target="esp32s3", num_bits=8):
             f.write(model_name)
 
             # Write input/output metadata
-            f.write(struct.pack('<I', len(input_info)))
+            f.write(struct.pack("<I", len(input_info)))
             for inp in input_info:
-                name_bytes = inp['name'].encode('utf-8')[:32].ljust(32, b'\0')
-                f.write(struct.pack('<I', len(name_bytes)))
+                name_bytes = inp["name"].encode("utf-8")[:32].ljust(32, b"\0")
+                f.write(struct.pack("<I", len(name_bytes)))
                 f.write(name_bytes)
-                f.write(struct.pack('<I', len(inp['shape'])))
-                for dim in inp['shape']:
-                    f.write(struct.pack('<I', dim))
+                f.write(struct.pack("<I", len(inp["shape"])))
+                for dim in inp["shape"]:
+                    f.write(struct.pack("<I", dim))
 
-            f.write(struct.pack('<I', len(output_info)))
+            f.write(struct.pack("<I", len(output_info)))
             for out in output_info:
-                name_bytes = out['name'].encode('utf-8')[:32].ljust(32, b'\0')
-                f.write(struct.pack('<I', len(name_bytes)))
+                name_bytes = out["name"].encode("utf-8")[:32].ljust(32, b"\0")
+                f.write(struct.pack("<I", len(name_bytes)))
                 f.write(name_bytes)
-                f.write(struct.pack('<I', len(out['shape'])))
-                for dim in out['shape']:
-                    f.write(struct.pack('<I', dim))
+                f.write(struct.pack("<I", len(out["shape"])))
+                for dim in out["shape"]:
+                    f.write(struct.pack("<I", dim))
 
             # Write quantized weights
-            f.write(struct.pack('<I', len(quantized_weights)))
+            f.write(struct.pack("<I", len(quantized_weights)))
             f.write(quantized_weights.tobytes())
 
         file_size = os.path.getsize(espdl_path)
@@ -117,6 +122,7 @@ def create_manual_espdl(onnx_path, espdl_path, target="esp32s3", num_bits=8):
         print(f"❌ Conversion failed: {str(e)}")
         return False
 
+
 def create_fallback_espdl(espdl_path):
     """
     Create a minimal ESPDL file as fallback
@@ -125,35 +131,35 @@ def create_fallback_espdl(espdl_path):
 
     try:
         # Create a minimal ESPDL structure
-        magic = b'ESPDL'
-        version = struct.pack('<I', 1)
-        target_id = struct.pack('<I', 0)  # ESP32-S3
+        magic = b"ESPDL"
+        version = struct.pack("<I", 1)
+        target_id = struct.pack("<I", 0)  # ESP32-S3
 
         # Minimal model info
-        model_name = b'glove_model'.ljust(64, b'\0')
-        model_name_len = struct.pack('<I', 64)
+        model_name = b"glove_model".ljust(64, b"\0")
+        model_name_len = struct.pack("<I", 64)
 
         # Minimal input/output info (1 input, 1 output)
-        input_count = struct.pack('<I', 1)
-        output_count = struct.pack('<I', 1)
+        input_count = struct.pack("<I", 1)
+        output_count = struct.pack("<I", 1)
 
         # Input tensor info
-        input_name = b'input'.ljust(32, b'\0')
-        input_name_len = struct.pack('<I', 32)
-        input_dims = struct.pack('<I', 1)  # 1D tensor
-        input_dim_size = struct.pack('<I', 100)  # 100 features
+        input_name = b"input".ljust(32, b"\0")
+        input_name_len = struct.pack("<I", 32)
+        input_dims = struct.pack("<I", 1)  # 1D tensor
+        input_dim_size = struct.pack("<I", 100)  # 100 features
 
         # Output tensor info
-        output_name = b'output'.ljust(32, b'\0')
-        output_name_len = struct.pack('<I', 32)
-        output_dims = struct.pack('<I', 1)  # 1D tensor
-        output_dim_size = struct.pack('<I', 10)  # 10 classes
+        output_name = b"output".ljust(32, b"\0")
+        output_name_len = struct.pack("<I", 32)
+        output_dims = struct.pack("<I", 1)  # 1D tensor
+        output_dim_size = struct.pack("<I", 10)  # 10 classes
 
         # Minimal weights (placeholder)
-        weights_size = struct.pack('<I', 1000)
+        weights_size = struct.pack("<I", 1000)
         weights = np.random.randint(-128, 127, 1000, dtype=np.int8)
 
-        with open(espdl_path, 'wb') as f:
+        with open(espdl_path, "wb") as f:
             f.write(magic)
             f.write(version)
             f.write(target_id)
@@ -181,6 +187,7 @@ def create_fallback_espdl(espdl_path):
     except Exception as e:
         print(f"❌ Fallback creation failed: {str(e)}")
         return False
+
 
 if __name__ == "__main__":
     print("🔄 ONNX to ESPDL Manual Converter")

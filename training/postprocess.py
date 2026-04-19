@@ -124,9 +124,15 @@ class GestureConvNet(nn.Module):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train, export, and quantize the SmartGlove model")
-    parser.add_argument("--dataset", default=DEFAULT_DATASET, help="Kaggle dataset reference")
-    parser.add_argument("--csv", type=Path, help="Use a local CSV instead of downloading from Kaggle")
+    parser = argparse.ArgumentParser(
+        description="Train, export, and quantize the SmartGlove model"
+    )
+    parser.add_argument(
+        "--dataset", default=DEFAULT_DATASET, help="Kaggle dataset reference"
+    )
+    parser.add_argument(
+        "--csv", type=Path, help="Use a local CSV instead of downloading from Kaggle"
+    )
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=32)
@@ -134,7 +140,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--validation-fraction", type=float, default=0.25)
     parser.add_argument("--majority-threshold", type=float, default=0.8)
     parser.add_argument("--calibration-steps", type=int, default=32)
-    parser.add_argument("--target", default="esp32s3", choices=["c", "esp32s3", "esp32p4"])
+    parser.add_argument(
+        "--target", default="esp32s3", choices=["c", "esp32s3", "esp32p4"]
+    )
     parser.add_argument("--bits", type=int, default=8, choices=[8, 16])
     parser.add_argument("--artifacts-dir", type=Path, default=TRAINING_DIR)
     parser.add_argument("--weights-name", default="glove_model.pt")
@@ -210,7 +218,9 @@ def find_candidate_csvs(dataset_root: Path) -> list[Path]:
 def download_dataset(dataset_ref: str) -> Path:
     dataset_path = Path(kagglehub.dataset_download(dataset_ref))
     if not dataset_path.exists():
-        raise FileNotFoundError(f"KaggleHub reported {dataset_path}, but it does not exist")
+        raise FileNotFoundError(
+            f"KaggleHub reported {dataset_path}, but it does not exist"
+        )
     return dataset_path
 
 
@@ -231,7 +241,9 @@ def load_dataframe(csv_paths: Iterable[Path]) -> tuple[pd.DataFrame, list[Path]]
         accepted_paths.append(csv_path)
 
     if not frames:
-        raise ValueError("Found CSV files, but none contained the required SmartGlove columns")
+        raise ValueError(
+            "Found CSV files, but none contained the required SmartGlove columns"
+        )
 
     combined = pd.concat(frames, ignore_index=True)
     return combined, accepted_paths
@@ -343,7 +355,10 @@ def train_model(
         val_accuracy = evaluate_model(model, val_loader)
         if val_accuracy > best_val_accuracy:
             best_val_accuracy = val_accuracy
-            best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+            best_state = {
+                key: value.detach().cpu().clone()
+                for key, value in model.state_dict().items()
+            }
 
         avg_train_loss = train_loss / max(1, train_count)
         print(
@@ -406,7 +421,9 @@ def validate_onnx(model: nn.Module, onnx_path: Path, sample: np.ndarray) -> floa
     return max_abs_error
 
 
-def collate_calibration_batch(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> torch.Tensor:
+def collate_calibration_batch(
+    batch: list[tuple[torch.Tensor, torch.Tensor]],
+) -> torch.Tensor:
     inputs = torch.stack([item[0] for item in batch], dim=0)
     return inputs.cpu()
 
@@ -449,7 +466,9 @@ def quantize_model(
     )
 
 
-def ensure_output_paths(artifacts_dir: Path, weights_name: str, onnx_name: str, espdl_name: str) -> ArtifactPaths:
+def ensure_output_paths(
+    artifacts_dir: Path, weights_name: str, onnx_name: str, espdl_name: str
+) -> ArtifactPaths:
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     espdl_base = artifacts_dir / espdl_name
     return ArtifactPaths(
@@ -463,7 +482,9 @@ def ensure_output_paths(artifacts_dir: Path, weights_name: str, onnx_name: str, 
 
 
 def write_metadata(metadata: TrainingMetadata, output_path: Path) -> None:
-    output_path.write_text(json.dumps(asdict(metadata), indent=2) + "\n", encoding="utf-8")
+    output_path.write_text(
+        json.dumps(asdict(metadata), indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def load_metadata(metadata_path: Path | None = None) -> TrainingMetadata:
@@ -481,7 +502,7 @@ def build_scaler_from_metadata(metadata: TrainingMetadata) -> StandardScaler:
     scaler = StandardScaler()
     scaler.mean_ = np.asarray(metadata.scaler_mean, dtype=np.float64)
     scaler.scale_ = np.asarray(metadata.scaler_scale, dtype=np.float64)
-    scaler.var_ = scaler.scale_ ** 2
+    scaler.var_ = scaler.scale_**2
     scaler.n_features_in_ = len(metadata.sensor_columns)
     return scaler
 
@@ -492,9 +513,13 @@ def write_rust_metadata(metadata: TrainingMetadata, output_path: Path) -> None:
     means = ", ".join(f"{value:.8f}" for value in metadata.scaler_mean)
     scales = ", ".join(f"{value:.8f}" for value in metadata.scaler_scale)
     espdl_input_shape = (
-        metadata.espdl_input_shape if metadata.espdl_input_shape is not None else metadata.input_shape
+        metadata.espdl_input_shape
+        if metadata.espdl_input_shape is not None
+        else metadata.input_shape
     )
-    espdl_output_shape = metadata.espdl_output_shape if metadata.espdl_output_shape is not None else []
+    espdl_output_shape = (
+        metadata.espdl_output_shape if metadata.espdl_output_shape is not None else []
+    )
     output = f"""// Generated by training/postprocess.py. Do not edit manually.
 pub const MODEL_WINDOW_SIZE: usize = {metadata.window_size};
 pub const MODEL_WINDOW_STEP: usize = {metadata.window_step};
@@ -513,7 +538,9 @@ pub const FEATURE_SCALES: [f32; {len(metadata.scaler_scale)}] = [{scales}];
     output_path.write_text(output, encoding="utf-8")
 
 
-def append_rust_quantized_examples(output_path: Path, examples: QuantizedModelExamples) -> None:
+def append_rust_quantized_examples(
+    output_path: Path, examples: QuantizedModelExamples
+) -> None:
     input_values = ", ".join(str(value) for value in examples.input_tensor.values)
     output_values = ", ".join(str(value) for value in examples.output_tensor.values)
     addition = f"""
@@ -524,7 +551,9 @@ pub const ESPDL_TEST_OUTPUT: [i8; {len(examples.output_tensor.values)}] = [{outp
         handle.write(addition)
 
 
-def parse_quantized_tensor_example(info_text: str, section_header: str) -> QuantizedTensorExample:
+def parse_quantized_tensor_example(
+    info_text: str, section_header: str
+) -> QuantizedTensorExample:
     pattern = re.compile(
         rf"{section_header}:\s*%(?P<name>[\w/\.]+), shape: \[(?P<shape>[^\]]+)\], "
         rf"exponents: \[(?P<exponent>-?\d+)\],\s*value: array\(\[(?P<values>.*?)\],\s*dtype=(?P<dtype>\w+)\)",
@@ -532,11 +561,17 @@ def parse_quantized_tensor_example(info_text: str, section_header: str) -> Quant
     )
     match = pattern.search(info_text)
     if match is None:
-        raise ValueError(f"Could not parse {section_header} from {TRAINING_DIR / 'glove_model.info'}")
+        raise ValueError(
+            f"Could not parse {section_header} from {TRAINING_DIR / 'glove_model.info'}"
+        )
 
-    shape = [int(part.strip()) for part in match.group("shape").split(",") if part.strip()]
+    shape = [
+        int(part.strip()) for part in match.group("shape").split(",") if part.strip()
+    ]
     logical_size = math.prod(shape)
-    values = np.fromstring(match.group("values").replace("\n", " "), sep=",", dtype=np.int64)
+    values = np.fromstring(
+        match.group("values").replace("\n", " "), sep=",", dtype=np.int64
+    )
     values = values[:logical_size].astype(np.int64).tolist()
     return QuantizedTensorExample(
         name=match.group("name"),
@@ -550,7 +585,9 @@ def load_quantized_examples(info_path: Path) -> QuantizedModelExamples:
     info_text = info_path.read_text(encoding="utf-8")
     input_tensor = parse_quantized_tensor_example(info_text, "test inputs value")
     output_tensor = parse_quantized_tensor_example(info_text, "test outputs value")
-    return QuantizedModelExamples(input_tensor=input_tensor, output_tensor=output_tensor)
+    return QuantizedModelExamples(
+        input_tensor=input_tensor, output_tensor=output_tensor
+    )
 
 
 def prepare_dataset(args: argparse.Namespace) -> tuple[pd.DataFrame, list[Path], str]:
@@ -578,7 +615,9 @@ def main() -> None:
     )
 
     df, csv_paths, dataset_path = prepare_dataset(args)
-    print(f"loaded_rows={len(df)} csv_files={len(csv_paths)} dataset_path={dataset_path}")
+    print(
+        f"loaded_rows={len(df)} csv_files={len(csv_paths)} dataset_path={dataset_path}"
+    )
 
     train_subjects, val_subjects = split_subjects(
         df[SUBJECT_COL].to_numpy(),
@@ -605,7 +644,9 @@ def main() -> None:
     scaler = StandardScaler()
     scaler.fit(train_df[SENSOR_COLS])
 
-    x_train, y_train = build_windows(train_df, label_encoder, scaler, args.majority_threshold)
+    x_train, y_train = build_windows(
+        train_df, label_encoder, scaler, args.majority_threshold
+    )
     x_val, y_val = build_windows(val_df, label_encoder, scaler, args.majority_threshold)
     print(
         f"train_windows={len(x_train)} val_windows={len(x_val)} "
@@ -620,7 +661,9 @@ def main() -> None:
         batch_size=args.batch_size,
     )
 
-    model = GestureConvNet(input_channels=len(SENSOR_COLS), num_classes=len(label_encoder.classes_))
+    model = GestureConvNet(
+        input_channels=len(SENSOR_COLS), num_classes=len(label_encoder.classes_)
+    )
     model, val_accuracy = train_model(
         model=model,
         train_loader=train_loader,

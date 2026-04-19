@@ -6,18 +6,20 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "bleak>=0.22.3",
+    "matplotlib>=3.9.2",
     "pyserial>=3.5",
     "PyYAML>=6.0.2",
 ]
 
 [project.scripts]
-collect_data = "tests.collect_data:main"
+collect-data = "tests.collect_data:main"
 network-e2e = "tests.network_e2e:main"
 provision-e2e = "tests.provision_e2e:main"
 provision-serial = "tests.serial_capture:main"
 provision-test = "tests.provision_test:main"
 gesture-model = "training.postprocess:main"
 gesture-infer = "training.infer:main"
+visualize-dataset = "tests.visualize_dataset:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -6,6 +6,7 @@ use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::hal::units::*;
 
 const IMU_I2C_ADDRESS: u8 = 0x68;
+const SAMPLE_INTERVAL_MS: u32 = 10;
 
 fn main() {
     esp_idf_svc::sys::link_patches();
@@ -22,7 +23,7 @@ fn main() {
         peripherals.pins.gpio48,
         &i2c_config,
     )
-        .expect("failed to initialize I2C");
+    .expect("failed to initialize I2C");
 
     let mut delay = FreeRtos;
     let mut imu = Mpu6050Imu::new_with_addr(i2c, IMU_I2C_ADDRESS, &mut delay)
@@ -43,41 +44,84 @@ fn main() {
     log::info!("driver started");
 
     loop {
-        match imu.read_acc() {
-            Ok(acc) => log::info!("imu acc: x={:.3}, y={:.3}, z={:.3}", acc[0], acc[1], acc[2]),
-            Err(err) => log::error!("failed to read accelerometer: {:?}", err),
-        }
+        let acc = match imu.read_acc() {
+            Ok(acc) => acc,
+            Err(err) => {
+                log::error!("driver sample failed: accelerometer={:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
 
-        match imu.read_vec() {
-            Ok(vec) => log::info!("imu vec: x={:.3}, y={:.3}, z={:.3}", vec[0], vec[1], vec[2]),
-            Err(err) => log::error!("failed to read vector: {:?}", err),
-        }
+        let vec = match imu.read_vec() {
+            Ok(vec) => vec,
+            Err(err) => {
+                log::error!("driver sample failed: vector={:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
 
-        match thumb_finger.read_value() {
-            Ok(value) => log::info!("thumb flex sensor: {}", value),
-            Err(err) => log::error!("failed to read thumb flex sensor: {:?}", err),
-        }
+        let thumb = match thumb_finger.read_value() {
+            Ok(value) => value,
+            Err(err) => {
+                log::error!("driver sample failed: thumb={:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
 
-        match index_finger.read_value() {
-            Ok(value) => log::info!("index flex sensor: {}", value),
-            Err(err) => log::error!("failed to read index flex sensor: {:?}", err),
-        }
+        let index = match index_finger.read_value() {
+            Ok(value) => value,
+            Err(err) => {
+                log::error!("driver sample failed: index={:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
 
-        match middle_finger.read_value() {
-            Ok(value) => log::info!("middle flex sensor: {}", value),
-            Err(err) => log::error!("failed to read middle flex sensor: {:?}", err),
-        }
+        let middle = match middle_finger.read_value() {
+            Ok(value) => value,
+            Err(err) => {
+                log::error!("driver sample failed: middle={:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
 
-        match ring_finger.read_value() {
-            Ok(value) => log::info!("ring flex sensor: {}", value),
-            Err(err) => log::error!("failed to read ring flex sensor: {:?}", err),
-        }
+        let ring = match ring_finger.read_value() {
+            Ok(value) => value,
+            Err(err) => {
+                log::error!("driver sample failed: ring={:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
 
-        match pinky_finger.read_value() {
-            Ok(value) => log::info!("pinky flex sensor: {}", value),
-            Err(err) => log::error!("failed to read pinky flex sensor: {:?}", err),
-        }
+        let pinky = match pinky_finger.read_value() {
+            Ok(value) => value,
+            Err(err) => {
+                log::error!("driver sample failed: pinky={:?}", err);
+                FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
+                continue;
+            }
+        };
 
-        FreeRtos::delay_ms(500u32);
+        log::info!(
+            "sample acc={:.3},{:.3},{:.3} vec={:.3},{:.3},{:.3} flex={},{},{},{},{}",
+            acc[0],
+            acc[1],
+            acc[2],
+            vec[0],
+            vec[1],
+            vec[2],
+            thumb,
+            index,
+            middle,
+            ring,
+            pinky
+        );
+
+        FreeRtos::delay_ms(SAMPLE_INTERVAL_MS);
     }
 }

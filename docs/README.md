@@ -1,5 +1,10 @@
 # smart_glove
 
+Additional design notes:
+
+- [Device Identity And Auth Workflow](device-identity.md)
+- [Network OpenAPI](network-openapi.yaml)
+
 ## Dev Containers
 This repository offers Dev Containers supports for:
 -  [VS Code Dev Containers](https://code.visualstudio.com/docs/remote/containers#_quick-start-open-an-existing-folder-in-a-container)

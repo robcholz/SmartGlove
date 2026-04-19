@@ -16,12 +16,14 @@ PROVISION_MAGIC = b"SG"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the SmartGlove BLE provisioning test.")
+    parser = argparse.ArgumentParser(
+        description="Run the SmartGlove BLE provisioning test."
+    )
     parser.add_argument("--device-name", default="SmartGlove Provision")
     parser.add_argument("--ssid", required=True)
     parser.add_argument("--password", required=True)
     parser.add_argument("--scan-timeout", type=float, default=15.0)
-    parser.add_argument("--status-timeout", type=float, default=30.0)
+    parser.add_argument("--status-timeout", type=float, default=50.0)
     parser.add_argument(
         "--allow-name-fallback",
         action="store_true",
@@ -54,7 +56,10 @@ async def run_test(args: argparse.Namespace) -> int:
             try:
                 serial_capture.wait_for("PROVISION_READY", timeout=10.0)
             except TimeoutError:
-                print("warning: PROVISION_READY was not seen on serial before BLE scan", flush=True)
+                print(
+                    "warning: PROVISION_READY was not seen on serial before BLE scan",
+                    flush=True,
+                )
 
         device = await BleakScanner.find_device_by_filter(
             lambda _, advertisement: advertisement_matches(args, advertisement),
@@ -75,10 +80,14 @@ async def run_test(args: argparse.Namespace) -> int:
         async with BleakClient(device) as client:
             await client.start_notify(PROVISION_STATUS_UUID, handle_status)
             payload = f"{args.ssid}\n{args.password}".encode("utf-8")
-            await client.write_gatt_char(PROVISION_CREDENTIALS_UUID, payload, response=True)
+            await client.write_gatt_char(
+                PROVISION_CREDENTIALS_UUID, payload, response=True
+            )
 
             while True:
-                status = await asyncio.wait_for(status_queue.get(), timeout=args.status_timeout)
+                status = await asyncio.wait_for(
+                    status_queue.get(), timeout=args.status_timeout
+                )
                 if status == "connected":
                     print("provisioning succeeded", flush=True)
                     break

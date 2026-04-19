@@ -1,0 +1,276 @@
+openapi: 3.1.0
+info:
+  title: Smart Glove Network API
+  version: 0.1.0
+  summary: HTTP and WebSocket wire format used by the current `network` crate.
+  description: >
+    This spec documents the current payload shape implemented in `src/network/src/`.
+    The crate takes concrete endpoint URLs from integration code, so the paths below are
+    canonical server-side routes for documentation purposes.
+
+servers:
+  - url: https://api.example.com
+    description: Canonical HTTPS API origin
+  - url: wss://api.example.com
+    description: Canonical WebSocket API origin
+
+tags:
+  - name: Device Info
+  - name: Status Stream
+
+paths:
+  /v1/device-info:
+    post:
+      tags:
+        - Device Info
+      summary: Publish device metadata
+      description: >
+        Called by the device to advertise its `device_id` and the list of event names it may emit.
+        The current client accepts any `2xx` status and ignores the response body.
+      operationId: sendDeviceInfo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceInfoRequest'
+            examples:
+              default:
+                value:
+                  device_id: aca704299de8
+                  events:
+                    - gesture.wave
+                    - gesture.fist
+                    - battery.low
+      responses:
+        '200':
+          description: Device info accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        '202':
+          description: Device info accepted asynchronously
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        '400':
+          description: Invalid payload
+        '409':
+          description: Conflicting device registration state
+
+  /v1/ws:
+    get:
+      tags:
+        - Status Stream
+      summary: Upgrade to the device status WebSocket
+      description: >
+        HTTP upgrade endpoint used by the device for online notifications, discrete events,
+        and buffered sensor telemetry. After a successful `101` response, the client sends only
+        text frames containing JSON messages matching the schemas documented in
+        `x-websocket-messages`.
+      operationId: openStatusWebSocket
+      responses:
+        '101':
+          description: Switching Protocols
+        '400':
+          description: Invalid upgrade request
+        '401':
+          description: Authentication required
+        '403':
+          description: Device not allowed to open the stream
+      x-websocket-messages:
+        direction: client_to_server
+        contentType: application/json
+        oneOf:
+          - $ref: '#/components/schemas/DeviceOnlineFrame'
+          - $ref: '#/components/schemas/DeviceEventFrame'
+          - $ref: '#/components/schemas/SensorBatchFrame'
+        examples:
+          online:
+            value:
+              kind: device.online
+              device_id: aca704299de8
+          event:
+            value:
+              kind: device.event
+              device_id: aca704299de8
+              event: battery.low
+              payload:
+                percent: 11
+          sensorBatch:
+            value:
+              kind: sensor.batch
+              device_id: aca704299de8
+              sample_rate_hz: 100
+              start_tick_ms: 128340
+              samples:
+                - imu_acc: [0.11321, 0.42855, 1.00231]
+                  vel: [0.01340, 0.20441, -0.03210]
+                  flex:
+                    thumb: 0.41231
+                    index: 0.53311
+                    middle: 0.48421
+                    ring: 0.39200
+                    pinky: 0.31541
+                - imu_acc: [0.11648, 0.43002, 1.00188]
+                  vel: [0.01512, 0.20395, -0.03181]
+                  flex:
+                    thumb: 0.41302
+                    index: 0.53395
+                    middle: 0.48490
+                    ring: 0.39266
+                    pinky: 0.31602
+
+components:
+  schemas:
+    AckResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        ok:
+          type: boolean
+      required:
+        - ok
+
+    DeviceInfoRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        device_id:
+          type: string
+          description: Lowercase hexadecimal device identifier derived from the ESP factory MAC.
+          pattern: '^[0-9a-f]{12}$'
+        events:
+          type: array
+          description: Event names this device may emit over the WebSocket stream.
+          items:
+            type: string
+          minItems: 0
+      required:
+        - device_id
+        - events
+
+    DeviceOnlineFrame:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          const: device.online
+        device_id:
+          type: string
+          pattern: '^[0-9a-f]{12}$'
+      required:
+        - kind
+        - device_id
+
+    DeviceEventFrame:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          const: device.event
+        device_id:
+          type: string
+          pattern: '^[0-9a-f]{12}$'
+        event:
+          type: string
+        payload:
+          $ref: '#/components/schemas/JsonValue'
+      required:
+        - kind
+        - device_id
+        - event
+        - payload
+
+    SensorBatchFrame:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          const: sensor.batch
+        device_id:
+          type: string
+          pattern: '^[0-9a-f]{12}$'
+        sample_rate_hz:
+          type: integer
+          minimum: 1
+        start_tick_ms:
+          type: integer
+          minimum: 0
+          description: >
+            Device-local monotonic tick in milliseconds when the first sample in this batch was
+            captured. Sample time for each item is reconstructed as
+            `start_tick_ms + index * (1000 / sample_rate_hz)`.
+        samples:
+          type: array
+          items:
+            $ref: '#/components/schemas/BufferedSensorSample'
+      required:
+        - kind
+        - device_id
+        - sample_rate_hz
+        - start_tick_ms
+        - samples
+
+    BufferedSensorSample:
+      type: object
+      additionalProperties: false
+      properties:
+        imu_acc:
+          $ref: '#/components/schemas/Axis3'
+        vel:
+          $ref: '#/components/schemas/Axis3'
+        flex:
+          $ref: '#/components/schemas/FlexReadings'
+      required:
+        - imu_acc
+        - vel
+        - flex
+
+    Axis3:
+      type: array
+      minItems: 3
+      maxItems: 3
+      items:
+        type: number
+
+    FlexReadings:
+      type: object
+      additionalProperties: false
+      properties:
+        thumb:
+          type: number
+        index:
+          type: number
+        middle:
+          type: number
+        ring:
+          type: number
+        pinky:
+          type: number
+      required:
+        - thumb
+        - index
+        - middle
+        - ring
+        - pinky
+
+    JsonValue:
+      description: Arbitrary JSON value accepted by `StatusReporter::send_event`.
+      anyOf:
+        - type: object
+          additionalProperties:
+            $ref: '#/components/schemas/JsonValue'
+        - type: array
+          items:
+            $ref: '#/components/schemas/JsonValue'
+        - type: string
+        - type: number
+        - type: integer
+        - type: boolean
+        - type: 'null'

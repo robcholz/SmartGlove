@@ -2,10 +2,10 @@
 
 ## Stage 1
 
-- [ ] full hw drivers
-- [ ] espdl support
-- [ ] provisioning
-- [ ] networking
+- [x] full hw drivers
+- [x] espdl support
+- [x] provisioning
+- [x] networking
 
 ## Stage 2
 

@@ -3,7 +3,8 @@ const CREDENTIALS_UUID = "0000ff01-0000-1000-8000-00805f9b34fb";
 const STATUS_UUID = "0000ff02-0000-1000-8000-00805f9b34fb";
 const MANUFACTURER_ID = 0xffff;
 const MANUFACTURER_MAGIC = "SG";
-const NAME_PREFIX = "SmartGlove";
+const NAME_PREFIXES = ["SmartGlove", "SmartMachine"];
+const DEFAULT_DEVICE_LABEL = "Provisioning device";
 
 const state = {
   devices: new Map(),
@@ -43,7 +44,7 @@ function boot() {
   }
 
   setHint(
-    "Use Chrome or Edge on localhost. Scan mode uses the SmartGlove manufacturer marker."
+    "Use Chrome or Edge on localhost. Scan mode uses the SmartGlove/SmartMachine manufacturer marker."
   );
   renderDevices();
   renderLogEmpty();
@@ -91,13 +92,13 @@ async function startBleScan() {
 async function addDeviceViaPicker() {
   try {
     const device = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: NAME_PREFIX }],
+      acceptAllDevices: true,
       optionalServices: [SERVICE_UUID],
     });
 
     upsertDevice({
       id: device.id,
-      name: device.name || "SmartGlove device",
+      name: device.name || DEFAULT_DEVICE_LABEL,
       device,
       rssi: "picker",
       marker: "picker",
@@ -121,7 +122,7 @@ function handleAdvertisement(event) {
   const device = event.device;
   upsertDevice({
     id: device.id,
-    name: device.name || event.name || "SmartGlove device",
+    name: device.name || event.name || DEFAULT_DEVICE_LABEL,
     device,
     rssi: typeof event.rssi === "number" ? `${event.rssi} dBm` : "n/a",
     marker,
@@ -148,7 +149,7 @@ function renderDevices() {
   if (state.devices.size === 0) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "No SmartGlove provisioners discovered yet.";
+    empty.textContent = "No provisioners discovered yet.";
     ui.deviceList.append(empty);
     return;
   }
@@ -177,7 +178,7 @@ function syncSelectionUi() {
   const hasDevice = Boolean(deviceRecord);
 
   ui.selectedTitle.textContent = hasDevice
-    ? deviceRecord.name || "SmartGlove device"
+    ? deviceRecord.name || DEFAULT_DEVICE_LABEL
     : "No device selected";
   ui.markerText.textContent = hasDevice
     ? `${deviceRecord.marker || "unknown"} · ${deviceRecord.id}`

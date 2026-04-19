@@ -96,6 +96,10 @@ impl SlidingWindow {
         self.len
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     pub fn is_full(&self) -> bool {
         self.len == MODEL_WINDOW_SIZE
     }

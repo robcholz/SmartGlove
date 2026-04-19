@@ -21,10 +21,14 @@ use esp_idf_svc::eventloop::EspSystemEventLoop;
 #[cfg(not(esp_idf_btdm_ctrl_mode_br_edr_only))]
 use esp_idf_svc::hal::modem::{BluetoothModemPeripheral, WifiModemPeripheral};
 #[cfg(not(esp_idf_btdm_ctrl_mode_br_edr_only))]
-use esp_idf_svc::nvs::EspDefaultNvsPartition;
+use esp_idf_svc::nvs::{EspDefaultNvs, EspDefaultNvsPartition};
 use esp_idf_svc::sys::EspError;
 use esp_idf_svc::wifi::{AuthMethod, BlockingWifi, ClientConfiguration, Configuration, EspWifi};
 use log::{info, warn};
+
+const WIFI_CREDENTIALS_NAMESPACE: &str = "wifi_creds";
+const WIFI_SSID_KEY: &str = "ssid";
+const WIFI_PASSWORD_KEY: &str = "password";
 
 pub type ProvisionBleMessageCallback = Box<dyn FnMut(&[u8]) + Send>;
 pub type ProvisionWifiStatusCallback = Box<dyn FnMut(&WifiProvisioningStatus) + Send>;
@@ -161,6 +165,13 @@ pub trait ProvisionCapabilityProvider {
         password: &str,
     ) -> Result<WifiProvisioningStatus, ProvisionError>;
 
+    fn connect_saved(&mut self) -> Result<Option<WifiProvisioningStatus>, ProvisionError>;
+
+    fn save_credentials(
+        &mut self,
+        credentials: &ProvisioningCredentials,
+    ) -> Result<(), ProvisionError>;
+
     fn notify_wifi_status(&mut self, status: WifiProvisioningStatus) -> Result<(), ProvisionError>;
 
     fn set_ble_message_callback(&mut self, callback: Option<ProvisionBleMessageCallback>);
@@ -178,15 +189,11 @@ pub trait Provision {
 
 pub struct BasicProvision<P> {
     provider: P,
-    advertising_window: Duration,
 }
 
 impl<P> BasicProvision<P> {
-    pub fn new(provider: P, advertising_window: Duration) -> Self {
-        Self {
-            provider,
-            advertising_window,
-        }
+    pub fn new(provider: P, _: Duration) -> Self {
+        Self { provider }
     }
 
     pub fn provider(&self) -> &P {
@@ -214,13 +221,41 @@ where
 
         self.provider.broadcast()?;
 
-        let credentials = match credentials_rx.recv_timeout(self.advertising_window) {
-            Ok(credentials) => credentials,
-            Err(_) => {
-                // let _ = self.provider.turn_off_broadcast();
-                return Err(ProvisionError::Timeout);
+        if let Some(saved_result) = self.provider.connect_saved()? {
+            match saved_result {
+                WifiProvisioningStatus::Connected => {
+                    return Ok(());
+                }
+                WifiProvisioningStatus::ConnectionFailed(reason) => {
+                    warn!("saved wi-fi connection failed: {reason}");
+                }
+                other => {
+                    return Err(ProvisionError::Unsupported(match other {
+                        WifiProvisioningStatus::BroadcastStarting => {
+                            "unexpected broadcast_starting status after saved Wi-Fi connect"
+                        }
+                        WifiProvisioningStatus::Broadcasting => {
+                            "unexpected broadcasting status after saved Wi-Fi connect"
+                        }
+                        WifiProvisioningStatus::BroadcastStopped => {
+                            "unexpected broadcast_stopped status after saved Wi-Fi connect"
+                        }
+                        WifiProvisioningStatus::CredentialsReceived => {
+                            "unexpected credentials_received status after saved Wi-Fi connect"
+                        }
+                        WifiProvisioningStatus::Connecting => {
+                            "unexpected connecting status after saved Wi-Fi connect"
+                        }
+                        WifiProvisioningStatus::Connected
+                        | WifiProvisioningStatus::ConnectionFailed(_) => unreachable!(),
+                    }));
+                }
             }
-        };
+        }
+
+        let credentials = credentials_rx
+            .recv()
+            .map_err(|_| ProvisionError::Unsupported("provisioning channel closed"))?;
 
         // self.provider.turn_off_broadcast()?;
         log::info!(
@@ -232,7 +267,10 @@ where
             .provider
             .connect(&credentials.ssid, &credentials.password)?
         {
-            WifiProvisioningStatus::Connected => Ok(()),
+            WifiProvisioningStatus::Connected => {
+                self.provider.save_credentials(&credentials)?;
+                Ok(())
+            }
             WifiProvisioningStatus::ConnectionFailed(reason) => {
                 Err(ProvisionError::ConnectionFailed(reason))
             }
@@ -306,6 +344,7 @@ pub struct EspProvisionCapabilityProvider<'d> {
     gap: Arc<EspBleGap<'d, Ble, Arc<BtDriver<'d, Ble>>>>,
     gatts: Arc<EspGatts<'d, Ble, Arc<BtDriver<'d, Ble>>>>,
     wifi: Arc<Mutex<BlockingWifi<EspWifi<'d>>>>,
+    nvs_partition: Option<EspDefaultNvsPartition>,
     state: Arc<Mutex<EspProvisionState>>,
     callbacks: Arc<Mutex<ProvisioningCallbacks>>,
 }
@@ -327,14 +366,16 @@ impl<'d> EspProvisionCapabilityProvider<'d> {
             EspWifi::new(wifi_modem, sysloop.clone(), nvs.clone())?,
             sysloop,
         )?;
-        let bt = Arc::new(BtDriver::new(bluetooth_modem, nvs)?);
+        let bt = Arc::new(BtDriver::new(bluetooth_modem, nvs.clone())?);
 
-        Self::from_parts(
+        let mut provider = Self::from_parts(
             device_name,
             EspBleGap::new(bt.clone())?,
             EspGatts::new(bt)?,
             wifi,
-        )
+        )?;
+        provider.nvs_partition = nvs.clone();
+        Ok(provider)
     }
 
     pub fn from_parts(
@@ -348,6 +389,7 @@ impl<'d> EspProvisionCapabilityProvider<'d> {
             gap: Arc::new(gap),
             gatts: Arc::new(gatts),
             wifi: Arc::new(Mutex::new(wifi)),
+            nvs_partition: None,
             state: Arc::new(Mutex::new(EspProvisionState::default())),
             callbacks: Arc::new(Mutex::new(ProvisioningCallbacks::default())),
         };
@@ -682,6 +724,34 @@ impl<'d> ProvisionCapabilityProvider for EspProvisionCapabilityProvider<'d> {
         Ok(result)
     }
 
+    fn connect_saved(&mut self) -> Result<Option<WifiProvisioningStatus>, ProvisionError> {
+        let Some(credentials) = self.load_saved_credentials()? else {
+            return Ok(None);
+        };
+
+        info!(
+            "trying saved wi-fi credentials for ssid={}",
+            credentials.ssid
+        );
+        Ok(Some(
+            self.connect(&credentials.ssid, &credentials.password)?,
+        ))
+    }
+
+    fn save_credentials(
+        &mut self,
+        credentials: &ProvisioningCredentials,
+    ) -> Result<(), ProvisionError> {
+        let Some(partition) = self.nvs_partition.clone() else {
+            return Ok(());
+        };
+
+        let nvs = EspDefaultNvs::new(partition, WIFI_CREDENTIALS_NAMESPACE, true)?;
+        nvs.set_str(WIFI_SSID_KEY, &credentials.ssid)?;
+        nvs.set_str(WIFI_PASSWORD_KEY, &credentials.password)?;
+        Ok(())
+    }
+
     fn notify_wifi_status(&mut self, status: WifiProvisioningStatus) -> Result<(), ProvisionError> {
         emit_status(&self.callbacks, status.clone());
 
@@ -718,6 +788,49 @@ impl<'d> ProvisionCapabilityProvider for EspProvisionCapabilityProvider<'d> {
         if let Ok(mut callbacks) = self.callbacks.lock() {
             callbacks.error = callback;
         }
+    }
+}
+
+#[cfg(not(esp_idf_btdm_ctrl_mode_br_edr_only))]
+impl<'d> EspProvisionCapabilityProvider<'d> {
+    fn load_saved_credentials(&self) -> Result<Option<ProvisioningCredentials>, ProvisionError> {
+        let Some(partition) = self.nvs_partition.clone() else {
+            return Ok(None);
+        };
+
+        let nvs = match EspDefaultNvs::new(partition.clone(), WIFI_CREDENTIALS_NAMESPACE, false) {
+            Ok(nvs) => nvs,
+            Err(err) if err.code() == esp_idf_svc::sys::ESP_ERR_NVS_NOT_FOUND => {
+                let _ = EspDefaultNvs::new(partition, WIFI_CREDENTIALS_NAMESPACE, true)?;
+                return Ok(None);
+            }
+            Err(err) => return Err(err.into()),
+        };
+
+        let Some(ssid_len) = nvs.str_len(WIFI_SSID_KEY)? else {
+            return Ok(None);
+        };
+        let Some(password_len) = nvs.str_len(WIFI_PASSWORD_KEY)? else {
+            return Ok(None);
+        };
+
+        let mut ssid_buf = vec![0_u8; ssid_len];
+        let mut password_buf = vec![0_u8; password_len];
+        let Some(ssid) = nvs.get_str(WIFI_SSID_KEY, &mut ssid_buf)? else {
+            return Ok(None);
+        };
+        let Some(password) = nvs.get_str(WIFI_PASSWORD_KEY, &mut password_buf)? else {
+            return Ok(None);
+        };
+
+        if ssid.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(ProvisioningCredentials {
+            ssid: ssid.to_owned(),
+            password: password.to_owned(),
+        }))
     }
 }
 

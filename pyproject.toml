@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "bleak>=0.22.3",
+    "matplotlib>=3.9.2",
     "fastapi>=0.115.0",
     "httpx>=0.28.0",
     "pyserial>=3.5",
@@ -14,19 +15,33 @@ dependencies = [
 ]
 
 [project.scripts]
+collect-data = "tests.collect_data:main"
 server = "server.__main__:main"
 provision-app = "server.provision_app:main"
 network-e2e = "tests.network_e2e:main"
 provision-e2e = "tests.provision_e2e:main"
 provision-serial = "tests.serial_capture:main"
 provision-test = "tests.provision_test:main"
+visualize-dataset = "tests.visualize_dataset:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["server", "tests"]
+packages = ["server", "tests", "training"]
+
+[dependency-groups]
+training = [
+    "esp-ppq>=0.8.0",
+    "kagglehub>=0.3.12",
+    "numpy>=1.26,<3",
+    "onnx>=1.17.0",
+    "onnxruntime>=1.20.1",
+    "pandas>=2.2.3",
+    "scikit-learn>=1.6.1",
+    "torch>=2.6.0",
+]
 
 [tool.uv]
 package = true

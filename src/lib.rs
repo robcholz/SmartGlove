@@ -1,3 +1,3 @@
 pub mod experiment;
-pub mod runtime_config;
+pub mod inference;
 pub use network;

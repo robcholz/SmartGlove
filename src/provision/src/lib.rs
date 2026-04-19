@@ -193,9 +193,7 @@ pub struct BasicProvision<P> {
 
 impl<P> BasicProvision<P> {
     pub fn new(provider: P, _: Duration) -> Self {
-        Self {
-            provider,
-        }
+        Self { provider }
     }
 
     pub fn provider(&self) -> &P {

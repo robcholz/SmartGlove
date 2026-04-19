@@ -3,7 +3,15 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -198,7 +206,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if isinstance(frame, DeviceEventFrame):
                     for machine_socket, trigger in state.build_machine_triggers(frame):
                         try:
-                            await machine_socket.send_json(trigger.model_dump(mode="json"))
+                            await machine_socket.send_json(
+                                trigger.model_dump(mode="json")
+                            )
                             logger.info(
                                 "triggered machine device_id=%s event=%s source_device_id=%s source_event=%s",
                                 trigger.device_id,
@@ -207,7 +217,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                 trigger.source_event,
                             )
                         except RuntimeError:
-                            state.unregister_machine_socket(trigger.device_id, machine_socket)
+                            state.unregister_machine_socket(
+                                trigger.device_id, machine_socket
+                            )
         except WebSocketDisconnect:
             return
         finally:

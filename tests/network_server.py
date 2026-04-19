@@ -17,7 +17,14 @@ WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 @dataclass
 class CapturedTraffic:
     device_info: dict[str, Any] | None = None
-    ws_messages: list[dict[str, Any]] = field(default_factory=list)
+    ws_frames: list["CapturedWsFrame"] = field(default_factory=list)
+
+
+@dataclass
+class CapturedWsFrame:
+    payload: dict[str, Any]
+    received_at: float
+    size_bytes: int
 
 
 class MockNetworkServer:
@@ -46,6 +53,15 @@ class MockNetworkServer:
             assert self._server is not None
             self._server.close()
             await self._server.wait_closed()
+            tasks = [
+                task
+                for task in asyncio.all_tasks(self._loop)
+                if task is not asyncio.current_task(self._loop)
+            ]
+            for task in tasks:
+                task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
         future = asyncio.run_coroutine_threadsafe(shutdown(), self._loop)
         future.result(timeout=5.0)
@@ -65,14 +81,17 @@ class MockNetworkServer:
             return self._traffic.device_info
 
     def wait_for_ws_messages(self, count: int, timeout: float) -> list[dict[str, Any]]:
+        return [frame.payload for frame in self.wait_for_ws_frames(count, timeout)]
+
+    def wait_for_ws_frames(self, count: int, timeout: float) -> list[CapturedWsFrame]:
         deadline = time.monotonic() + timeout
         with self._condition:
-            while len(self._traffic.ws_messages) < count:
+            while len(self._traffic.ws_frames) < count:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise TimeoutError("timed out waiting for websocket messages")
                 self._condition.wait(timeout=remaining)
-            return list(self._traffic.ws_messages)
+            return list(self._traffic.ws_frames)
 
     def _run(self) -> None:
         self._loop = asyncio.new_event_loop()
@@ -80,10 +99,13 @@ class MockNetworkServer:
         self._loop.run_until_complete(self._start_server())
         self._ready.set()
         self._loop.run_forever()
+        self._loop.run_until_complete(self._loop.shutdown_asyncgens())
         self._loop.close()
 
     async def _start_server(self) -> None:
-        self._server = await asyncio.start_server(self._handle_client, self.host, self.port)
+        self._server = await asyncio.start_server(
+            self._handle_client, self.host, self.port
+        )
         socket_info = self._server.sockets[0].getsockname()
         self.actual_port = int(socket_info[1])
 
@@ -108,6 +130,8 @@ class MockNetworkServer:
 
             writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
             await writer.drain()
+        except (asyncio.CancelledError, ConnectionError, asyncio.IncompleteReadError):
+            raise
         finally:
             if not writer.is_closing():
                 writer.close()
@@ -185,7 +209,13 @@ class MockNetworkServer:
 
             message = json.loads(payload.decode("utf-8"))
             with self._condition:
-                self._traffic.ws_messages.append(message)
+                self._traffic.ws_frames.append(
+                    CapturedWsFrame(
+                        payload=message,
+                        received_at=time.monotonic(),
+                        size_bytes=len(payload),
+                    )
+                )
                 self._condition.notify_all()
 
     async def _read_ws_frame(self, reader: asyncio.StreamReader) -> tuple[int, bytes]:

@@ -11,7 +11,13 @@ members = ["src/provision", "src/drivers", "src/identity", "src/network"]
 
 [[bin]]
 name = "smart-glove"
+path = "src/bin/smart-glove.rs"
 harness = false # do not use the built-in cargo test harness -> resolve rust-analyzer errors
+
+[[bin]]
+name = "smart-machine"
+path = "src/bin/smart-machine.rs"
+harness = false
 
 [[bin]]
 name = "provision"

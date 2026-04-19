@@ -13,9 +13,8 @@ fn main() {
 
     let peripherals = Peripherals::take().expect("failed to take peripherals");
 
-    // Assumed wiring for the current ESP32-S3 bring-up:
     // - MPU6050 on I2C0 with SDA=GPIO47, SCL=GPIO48
-    // - Flex sensor on ADC1 / GPIO2
+    // - Five analog flex sensors on ADC1 / GPIO4..GPIO8
     let i2c_config = I2cConfig::new().baudrate(100.kHz().into());
     let i2c = I2cDriver::new(
         peripherals.i2c0,
@@ -23,17 +22,25 @@ fn main() {
         peripherals.pins.gpio48,
         &i2c_config,
     )
-    .expect("failed to initialize I2C");
+        .expect("failed to initialize I2C");
 
     let mut delay = FreeRtos;
     let mut imu = Mpu6050Imu::new_with_addr(i2c, IMU_I2C_ADDRESS, &mut delay)
         .expect("failed to init MPU6050");
 
     let adc = AdcDriver::new(peripherals.adc1).expect("failed to initialize ADC1");
-    let mut flex_sensor = AnalogFlexSensor::new_with_pin(&adc, peripherals.pins.gpio2)
-        .expect("failed to initialize flex sensor");
+    let mut thumb_finger = AnalogFlexSensor::new_with_pin(&adc, peripherals.pins.gpio4)
+        .expect("failed to init thumb sensor");
+    let mut index_finger = AnalogFlexSensor::new_with_pin(&adc, peripherals.pins.gpio5)
+        .expect("failed to init index sensor");
+    let mut middle_finger = AnalogFlexSensor::new_with_pin(&adc, peripherals.pins.gpio6)
+        .expect("failed to init middle sensor");
+    let mut ring_finger = AnalogFlexSensor::new_with_pin(&adc, peripherals.pins.gpio7)
+        .expect("failed to init ring sensor");
+    let mut pinky_finger = AnalogFlexSensor::new_with_pin(&adc, peripherals.pins.gpio8)
+        .expect("failed to init pinky sensor");
 
-    log::info!("driver probe started");
+    log::info!("driver started");
 
     loop {
         match imu.read_acc() {
@@ -46,9 +53,29 @@ fn main() {
             Err(err) => log::error!("failed to read vector: {:?}", err),
         }
 
-        match flex_sensor.read_value() {
-            Ok(value) => log::info!("flex sensor: {}", value),
-            Err(err) => log::error!("failed to read flex sensor: {:?}", err),
+        match thumb_finger.read_value() {
+            Ok(value) => log::info!("thumb flex sensor: {}", value),
+            Err(err) => log::error!("failed to read thumb flex sensor: {:?}", err),
+        }
+
+        match index_finger.read_value() {
+            Ok(value) => log::info!("index flex sensor: {}", value),
+            Err(err) => log::error!("failed to read index flex sensor: {:?}", err),
+        }
+
+        match middle_finger.read_value() {
+            Ok(value) => log::info!("middle flex sensor: {}", value),
+            Err(err) => log::error!("failed to read middle flex sensor: {:?}", err),
+        }
+
+        match ring_finger.read_value() {
+            Ok(value) => log::info!("ring flex sensor: {}", value),
+            Err(err) => log::error!("failed to read ring flex sensor: {:?}", err),
+        }
+
+        match pinky_finger.read_value() {
+            Ok(value) => log::info!("pinky flex sensor: {}", value),
+            Err(err) => log::error!("failed to read pinky flex sensor: {:?}", err),
         }
 
         FreeRtos::delay_ms(500u32);
